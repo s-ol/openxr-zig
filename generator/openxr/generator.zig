@@ -270,7 +270,7 @@ pub const Generator = struct {
 
     fn stripFlags(self: Generator, name: []const u8) []const u8 {
         const tagless = self.id_renderer.stripAuthorTag(name);
-        return tagless[0 .. tagless.len - "Flags".len];
+        return tagless[0 .. tagless.len - "Flags64".len];
     }
 
     fn fixupBitmasks(self: *Generator) !void {

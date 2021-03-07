@@ -269,13 +269,15 @@ fn parsePointerMeta(fields: Fields, type_info: *registry.TypeInfo, elem: *xml.El
             if (it.next()) |current_optional| {
                 current_type_info.pointer.is_optional = mem.eql(u8, current_optional, "true");
             } else {
-                current_type_info.pointer.is_optional = false;
+                current_type_info.pointer.is_optional = true;
                 // There is no information for this pointer, probably incorrect.
                 // return error.InvalidRegistry;
             }
 
             current_type_info = current_type_info.pointer.child;
         }
+    } else if (mem.eql(u8, elem.getCharData("name") orelse "", "next")) {
+        type_info.pointer.is_optional = true;
     }
 }
 

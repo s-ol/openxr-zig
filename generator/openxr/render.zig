@@ -26,7 +26,7 @@ const preamble =
     \\        .C;
     \\pub fn FlagsMixin(comptime FlagsType: type) type {
     \\    return struct {
-    \\        pub const IntType = Flags;
+    \\        pub const IntType = Flags64;
     \\        pub fn toInt(self: FlagsType) IntType {
     \\            return @bitCast(IntType, self);
     \\        }
@@ -50,17 +50,17 @@ const preamble =
     \\        }
     \\    };
     \\}
-    \\pub fn makeVersion(major: u10, minor: u10, patch: u12) u32 {
-    \\    return (@as(u32, major) << 22) | (@as(u32, minor) << 12) | patch;
+    \\pub fn makeVersion(major: u16, minor: u16, patch: u32) u64 {
+    \\    return (@as(u64, major) << 48) | (@as(u64, minor) << 32) | patch;
     \\}
-    \\pub fn versionMajor(version: u32) u10 {
-    \\    return @truncate(u10, version >> 22);
+    \\pub fn versionMajor(version: u64) u16 {
+    \\    return @truncate(u16, version >> 48);
     \\}
-    \\pub fn versionMinor(version: u32) u10 {
-    \\    return @truncate(u10, version >> 12);
+    \\pub fn versionMinor(version: u16) u10 {
+    \\    return @truncate(u16, version >> 32);
     \\}
-    \\pub fn versionPatch(version: u32) u12 {
-    \\    return @truncate(u12, version);
+    \\pub fn versionPatch(version: u64) u32 {
+    \\    return @truncate(u32, version);
     \\}
     \\
     ;
@@ -252,7 +252,7 @@ fn Renderer(comptime WriterType: type) type {
             const tag = self.id_renderer.getAuthorTag(name);
             const base_name = if (tag) |tag_name| name[0 .. name.len - tag_name.len] else name;
 
-            return mem.endsWith(u8, base_name, "Flags");
+            return mem.endsWith(u8, base_name, "Flags64");
         }
 
         fn containerHasField(self: Self, container: *const reg.Container, field_name: []const u8) bool {
@@ -291,7 +291,7 @@ fn Renderer(comptime WriterType: type) type {
             }
 
             for (container.fields) |field| {
-                if (mem.eql(u8, field.name, "pNext")) {
+                if (mem.eql(u8, field.name, "next")) {
                     return true;
                 }
             }
@@ -322,7 +322,7 @@ fn Renderer(comptime WriterType: type) type {
                     if (ptr.size == .one and !ptr.is_optional) {
                         // Sometimes, a mutable pointer to a struct is taken, even though
                         // OpenXR expects this struct to be initialized. This is particularly the case
-                        // for getting structs which include pNext chains.
+                        // for getting structs which include next chains.
                         if (ptr.is_const) {
                             return .in_pointer;
                         } else if (try self.isInOutPointer(ptr)) {
@@ -496,7 +496,7 @@ fn Renderer(comptime WriterType: type) type {
                 try self.writer.writeAll(zig_name);
                 return;
             } else if (self.extractBitflagName(name)) |bitflag_name| {
-                try self.writeIdentifierFmt("{s}Flags{s}", .{
+                try self.writeIdentifierFmt("{s}Flags64{s}", .{
                     trimXrNamespace(bitflag_name.base_name),
                     @as([]const u8, if (bitflag_name.tag) |tag| tag else "")
                 });
@@ -535,7 +535,7 @@ fn Renderer(comptime WriterType: type) type {
                 blk: {
                     if (param.param_type == .name) {
                         if (self.extractBitflagName(param.param_type.name)) |bitflag_name| {
-                            try self.writeIdentifierFmt("{s}Flags{s}", .{
+                            try self.writeIdentifierFmt("{s}Flags64{s}", .{
                                 trimXrNamespace(bitflag_name.base_name),
                                 @as([]const u8, if (bitflag_name.tag) |tag| tag else "")
                             });
@@ -647,7 +647,7 @@ fn Renderer(comptime WriterType: type) type {
         }
 
         fn renderContainerDefaultField(self: *Self, container: reg.Container, field: reg.Container.Field) !void {
-            if (mem.eql(u8, field.name, "pNext")) {
+            if (mem.eql(u8, field.name, "next")) {
                 try self.writer.writeAll(" = null");
             } else if (mem.eql(u8, field.name, "sType")) {
                 if (container.stype == null) {
@@ -726,7 +726,7 @@ fn Renderer(comptime WriterType: type) type {
             try self.writer.writeAll(" = packed struct {");
 
             if (bits.fields.len == 0) {
-                try self.writer.writeAll("_reserved_bits: Flags = 0,");
+                try self.writer.writeAll("_reserved_bits: Flags64 = 0,");
             } else {
                 var flags_by_bitpos = [_]?[]const u8{null} ** 32;
                 for (bits.fields) |field| {
@@ -744,7 +744,7 @@ fn Renderer(comptime WriterType: type) type {
 
                     try self.writer.writeAll(": bool ");
                     if (bitpos == 0) { // Force alignment to integer boundaries
-                        try self.writer.writeAll("align(@alignOf(Flags)) ");
+                        try self.writer.writeAll("align(@alignOf(Flags64)) ");
                     }
                     try self.writer.writeAll("= false, ");
                 }
@@ -763,7 +763,7 @@ fn Renderer(comptime WriterType: type) type {
                 try self.renderName(name);
                 try self.writer.writeAll(
                     \\ = packed struct {
-                    \\_reserved_bits: Flags = 0,
+                    \\_reserved_bits: Flags64 = 0,
                     \\pub usingnamespace FlagsMixin(
                 );
                 try self.renderName(name);
