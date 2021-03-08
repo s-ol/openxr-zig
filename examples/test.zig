@@ -64,9 +64,7 @@ pub fn main() !void {
 
     const system = try xri.getSystem(inst, .{ .form_factor = .head_mounted_display });
 
-    var system_properties: xr.SystemProperties = undefined;
-    system_properties.type = .system_properties;
-    system_properties.next = null;
+    var system_properties = xr.SystemProperties.empty();
     try xri.getSystemProperties(inst, system, &system_properties);
 
     std.debug.print(
@@ -74,11 +72,11 @@ pub fn main() !void {
         \\  vendor Id: {}
         \\  systemName: {}
         \\  gfx
-        \\	  max swapchain image resolution: {}x{}
-        \\	  max layer count: {}
+        \\    max swapchain image resolution: {}x{}
+        \\    max layer count: {}
         \\  tracking
-        \\	  orientation tracking: {}
-        \\	  positional tracking: {}
+        \\    orientation tracking: {}
+        \\    positional tracking: {}
     , .{
         system,
         system_properties.vendor_id,

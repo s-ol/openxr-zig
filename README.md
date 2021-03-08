@@ -225,11 +225,15 @@ const Instance = extern enum(usize) { null_handle = 0, _ };
 ```
 This means that handles are type-safe even when compiling for a 32-bit target.
 
-### Struct defaults
+### Structs
 Defaults are generated for certain fields of structs:
 * `type` is defaulted to the appropriate value.
 * `next` is defaulted to `null`.
+* for math primitives (`Vector*`, `Color*`, `Quaternionf`, `Offset*`, `Extent*`, `Posef`, `Rect*`), all fields are zero-initialized by default.
 * No other fields have default values.
+
+All structs contain an `empty()` function that returns an instance with only `type` and `next` set, which can be used whenever OpenXR requires an uninitialized (but typed) structure to output into.
+
 ```zig
 pub const InstanceCreateInfo = extern struct {
     type: StructureType = .instance_create_info,
@@ -240,6 +244,12 @@ pub const InstanceCreateInfo = extern struct {
     enabled_api_layer_names: [*]const [*:0]const u8,
     enabled_extension_count: u32,
     enabled_extension_names: [*]const [*:0]const u8,
+    pub fn empty() @This() {
+        var value: @This() = undefined;
+        value.type = .instance_create_info;
+        value.next = null;
+        return value;
+    }
 };
 ```
 

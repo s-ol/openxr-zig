@@ -100,6 +100,21 @@ const foreign_types = std.ComptimeStringMap([]const u8, .{
     .{ "zx_handle_t", @typeName(u32) },
 });
 
+const initialized_types = std.ComptimeStringMap([]const u8, .{
+    .{ "XrVector2f", "0" },
+    .{ "XrVector3f", "0" },
+    .{ "XrVector4f", "0" },
+    .{ "XrColor4f", "0" },
+    .{ "XrQuaternionf", "0" },
+    .{ "XrPosef", ".{}" },
+    .{ "XrOffset2Df", "0" },
+    .{ "XrExtent2Df", "0" },
+    .{ "XrRect2Df", ".{}" },
+    .{ "XrOffset2Di", "0" },
+    .{ "XrExtent2Di", "0" },
+    .{ "XrRect2Di", ".{}" },
+});
+
 fn eqlIgnoreCase(lhs: []const u8, rhs: []const u8) bool {
     if (lhs.len != rhs.len) {
         return false;
@@ -626,15 +641,35 @@ fn Renderer(comptime WriterType: type) type {
                     }
                 } else {
                     try self.renderTypeInfo(field.field_type);
-                    try self.renderContainerDefaultField(container, field);
+                    try self.renderContainerDefaultField(container, name, field);
                     try self.writer.writeAll(", ");
                 }
+            }
+
+            if (!container.is_union) {
+                try self.writer.writeAll(
+                    \\    pub fn empty() @This() {
+                    \\        var value: @This() = undefined;
+                );
+                for (container.fields) |field| {
+                    if (mem.eql(u8, field.name, "next") or mem.eql(u8, field.name, "type")) {
+                        try self.writer.writeAll("value.");
+                        try self.writeIdentifierWithCase(.snake, field.name);
+                        try self.renderContainerDefaultField(container, name, field);
+                        try self.writer.writeAll(";\n");
+                    }
+                }
+
+                try self.writer.writeAll(
+                    \\        return value;
+                    \\    }
+                );
             }
 
             try self.writer.writeAll("};\n");
         }
 
-        fn renderContainerDefaultField(self: *Self, container: reg.Container, field: reg.Container.Field) !void {
+        fn renderContainerDefaultField(self: *Self, container: reg.Container, container_name: []const u8, field: reg.Container.Field) !void {
             if (mem.eql(u8, field.name, "next")) {
                 try self.writer.writeAll(" = null");
             } else if (mem.eql(u8, field.name, "type")) {
@@ -649,6 +684,9 @@ fn Renderer(comptime WriterType: type) type {
 
                 try self.writer.writeAll(" = .");
                 try self.writeIdentifierWithCase(.snake, stype["XR_TYPE_".len..]);
+            } else if (initialized_types.get(container_name)) |value| {
+                try self.writer.writeAll(" = ");
+                try self.writer.writeAll(value);
             }
         }
 
