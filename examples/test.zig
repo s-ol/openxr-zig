@@ -22,14 +22,12 @@ fn getProcAddr(instance: xr.Instance, name: [*:0]const u8) xr.PfnVoidFunction {
 }
 
 pub fn main() !void {
-    var name: [128] u8 = undefined;
+    var name: [128]u8 = undefined;
     std.mem.copy(u8, name[0..], "openxr-zig-test" ++ [_]u8{0});
     const zero = [_:0]u8{0};
 
     const xrb = try BaseDispatch.load(getProcAddr);
     const inst = try xrb.createInstance(.{
-        .type = .type_instance_create_info,
-        .next = null,
         .create_flags = .{},
         .application_info = .{
             .application_name = name,
@@ -43,20 +41,17 @@ pub fn main() !void {
         .enabled_extension_count = 0,
         .enabled_extension_names = @ptrCast([*]const [*:0]const u8, &zero),
     });
-    
+
     const xri = try InstanceDispatch.load(inst, getProcAddr);
     defer xri.destroyInstance(inst) catch unreachable;
 
-    const system = try xri.getSystem(inst, .{
-        .type = .type_system_get_info,
-        .form_factor = .head_mounted_display,
-    });
-    
+    const system = try xri.getSystem(inst, .{ .form_factor = .head_mounted_display });
+
     var system_properties: xr.SystemProperties = undefined;
-    system_properties.type = .type_system_properties;
+    system_properties.type = .system_properties;
     system_properties.next = null;
     try xri.getSystemProperties(inst, system, &system_properties);
-    
+
     std.debug.print(
         \\system {}:
         \\  vendor Id: {}

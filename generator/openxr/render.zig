@@ -164,7 +164,7 @@ fn Renderer(comptime WriterType: type) type {
         const CommandDispatchType = enum {
             base,
             instance,
-            device,
+            session,
         };
 
         writer: WriterType,
@@ -218,8 +218,10 @@ fn Renderer(comptime WriterType: type) type {
         }
 
         fn extractEnumFieldName(self: Self, enum_name: []const u8, field_name: []const u8) ![]const u8 {
-            const adjusted_enum_name = self.id_renderer.stripAuthorTag(enum_name);
-
+            const adjusted_enum_name = if (mem.eql(u8, enum_name, "XrStructureType"))
+                "XrType"
+            else
+                self.id_renderer.stripAuthorTag(enum_name);
             var enum_it = id_render.SegmentIterator.init(adjusted_enum_name);
             var field_it = id_render.SegmentIterator.init(field_name);
 
@@ -348,19 +350,16 @@ fn Renderer(comptime WriterType: type) type {
         }
 
         fn classifyCommandDispatch(self: Self, name: []const u8, command: reg.Command) CommandDispatchType {
-            const device_handles = std.ComptimeStringMap(void, .{
-                .{"XrDevice", {}},
-                .{"XrCommandBuffer", {}},
-                .{"XrQueue", {}},
-            });
-
             const override_functions = std.ComptimeStringMap(CommandDispatchType, .{
                 .{"xrGetInstanceProcAddr", .base},
                 .{"xrCreateInstance", .base},
-                .{"xrEnumerateInstanceLayerProperties", .base},
+                .{"xrEnumerateApiLayerProperties", .base},
                 .{"xrEnumerateInstanceExtensionProperties", .base},
-                .{"xrEnumerateInstanceVersion", .base},
-                .{"xrGetDeviceProcAddr", .instance},
+            });
+
+            const dispatch_types = std.ComptimeStringMap(CommandDispatchType, .{
+                .{"XrInstance", .instance},
+                .{"XrSession", .session},
             });
 
             if (override_functions.get(name)) |dispatch_type| {
@@ -369,14 +368,16 @@ fn Renderer(comptime WriterType: type) type {
 
             switch (command.params[0].param_type) {
                 .name => |first_param_type_name| {
-                    if (device_handles.get(first_param_type_name)) |_| {
-                        return .device;
+                    if (dispatch_types.get(first_param_type_name)) |dispatch_type| {
+                        return dispatch_type;
+                    } else {
+                        return .instance;
                     }
                 },
-                else => {},
+                else => {
+                    return .base;
+                },
             }
-
-            return .instance;
         }
 
         fn render(self: *Self) !void {
@@ -649,18 +650,18 @@ fn Renderer(comptime WriterType: type) type {
         fn renderContainerDefaultField(self: *Self, container: reg.Container, field: reg.Container.Field) !void {
             if (mem.eql(u8, field.name, "next")) {
                 try self.writer.writeAll(" = null");
-            } else if (mem.eql(u8, field.name, "sType")) {
+            } else if (mem.eql(u8, field.name, "type")) {
                 if (container.stype == null) {
                     return;
                 }
 
                 const stype = container.stype.?;
-                if (!mem.startsWith(u8, stype, "XR_STRUCTURE_TYPE_")) {
+                if (!mem.startsWith(u8, stype, "XR_TYPE_")) {
                     return error.InvalidRegistry;
                 }
 
                 try self.writer.writeAll(" = .");
-                try self.writeIdentifierWithCase(.snake, stype["XR_STRUCTURE_TYPE_".len ..]);
+                try self.writeIdentifierWithCase(.snake, stype["XR_TYPE_".len..]);
             }
         }
 
@@ -870,7 +871,7 @@ fn Renderer(comptime WriterType: type) type {
         fn renderWrappers(self: *Self) !void {
             try self.renderWrappersOfDispatchType("BaseWrapper", .base);
             try self.renderWrappersOfDispatchType("InstanceWrapper", .instance);
-            try self.renderWrappersOfDispatchType("DeviceWrapper", .device);
+            try self.renderWrappersOfDispatchType("SessionWrapper", .session);
         }
 
         fn renderWrappersOfDispatchType(self: *Self, name: []const u8, dispatch_type: CommandDispatchType) !void {
@@ -899,13 +900,13 @@ fn Renderer(comptime WriterType: type) type {
             const params = switch (dispatch_type) {
                 .base => "loader: anytype",
                 .instance => "instance: Instance, loader: anytype",
-                .device => "device: Device, loader: anytype",
+                .session => "instance: Instance, session: Session, loader: anytype",
             };
 
             const loader_first_param = switch (dispatch_type) {
                 .base => ".null_handle, ",
-                .instance => "instance, ",
-                .device => "device, ",
+                .instance,
+                .session => "instance, ",
             };
 
             @setEvalBranchQuota(2000);
