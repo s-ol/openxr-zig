@@ -162,7 +162,6 @@ fn Renderer(comptime WriterType: type) type {
         const CommandDispatchType = enum {
             base,
             instance,
-            session,
         };
 
         writer: WriterType,
@@ -357,25 +356,16 @@ fn Renderer(comptime WriterType: type) type {
 
             const dispatch_types = std.ComptimeStringMap(CommandDispatchType, .{
                 .{ "XrInstance", .instance },
-                .{ "XrSession", .session },
             });
 
             if (override_functions.get(name)) |dispatch_type| {
                 return dispatch_type;
             }
 
-            switch (command.params[0].param_type) {
-                .name => |first_param_type_name| {
-                    if (dispatch_types.get(first_param_type_name)) |dispatch_type| {
-                        return dispatch_type;
-                    } else {
-                        return .instance;
-                    }
-                },
-                else => {
-                    return .base;
-                },
-            }
+            return switch (command.params[0].param_type) {
+                .name => .instance,
+                else => return .base,
+            };
         }
 
         fn render(self: *Self) !void {
@@ -868,7 +858,6 @@ fn Renderer(comptime WriterType: type) type {
         fn renderWrappers(self: *Self) !void {
             try self.renderWrappersOfDispatchType("BaseWrapper", .base);
             try self.renderWrappersOfDispatchType("InstanceWrapper", .instance);
-            try self.renderWrappersOfDispatchType("SessionWrapper", .session);
         }
 
         fn renderWrappersOfDispatchType(self: *Self, name: []const u8, dispatch_type: CommandDispatchType) !void {
@@ -896,12 +885,11 @@ fn Renderer(comptime WriterType: type) type {
             const params = switch (dispatch_type) {
                 .base => "loader: anytype",
                 .instance => "instance: Instance, loader: anytype",
-                .session => "instance: Instance, session: Session, loader: anytype",
             };
 
             const loader_first_param = switch (dispatch_type) {
                 .base => ".null_handle, ",
-                .instance, .session => "instance, ",
+                .instance => "instance, ",
             };
 
             @setEvalBranchQuota(2000);
@@ -911,7 +899,7 @@ fn Renderer(comptime WriterType: type) type {
                 \\    var self: Self = undefined;
                 \\    inline for (std.meta.fields(Self)) |field| {{
                 \\        const name = @ptrCast([*:0]const u8, field.name ++ "\x00");
-                \\        const cmd_ptr = loader({s}name) orelse return error.InvalidCommand;
+                \\        const cmd_ptr = (try loader({s}name)) orelse return error.InvalidCommand;
                 \\        @field(self, field.name) = @ptrCast(field.field_type, cmd_ptr);
                 \\    }}
                 \\    return self;

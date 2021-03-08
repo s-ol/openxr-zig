@@ -12,13 +12,30 @@ const InstanceDispatch = struct {
     xrDestroyInstance: xr.PfnDestroyInstance,
     xrGetSystem: xr.PfnGetSystem,
     xrGetSystemProperties: xr.PfnGetSystemProperties,
+    xrCreateSession: xr.PfnCreateSession,
+    xrPollEvent: xr.PfnPollEvent,
     usingnamespace xr.InstanceWrapper(@This());
 };
 
-fn getProcAddr(instance: xr.Instance, name: [*:0]const u8) xr.PfnVoidFunction {
+const SessionDispatch = struct {
+    xrBeginSession: xr.PfnBeginSession,
+    xrEndSession: xr.PfnEndSession,
+    usingnamespace xr.SessionWrapper(@This());
+};
+
+fn getProcAddr(instance: xr.Instance, name: [*:0]const u8) !xr.PfnVoidFunction {
     var out: xr.PfnVoidFunction = undefined;
-    _ = c.xrGetInstanceProcAddr(instance, name, &out);
-    return out;
+    const result = c.xrGetInstanceProcAddr(instance, name, &out);
+    return switch (result) {
+        .success => out,
+        .error_handle_invalid => error.HandleInvalid,
+        .error_instance_lost => error.InstanceLost,
+        .error_runtime_failure => error.RuntimeFailure,
+        .error_out_of_memory => error.OutOfMemory,
+        .error_function_unsupported => error.FunctionUnsupported,
+        .error_validation_failure => error.ValidationFailure,
+        else => error.Unknown,
+    };
 }
 
 pub fn main() !void {
@@ -71,5 +88,10 @@ pub fn main() !void {
         system_properties.graphics_properties.max_layer_count,
         system_properties.tracking_properties.orientation_tracking,
         system_properties.tracking_properties.position_tracking,
+    });
+
+    const session = try xri.createSession(inst, .{
+        .create_flags = .{},
+        .system_id = system,
     });
 }
