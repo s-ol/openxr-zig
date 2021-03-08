@@ -109,7 +109,7 @@ fn parseBitmaskType(ty: *xml.Element) !registry.Declaration {
     } else {
         return registry.Declaration{
             .name = ty.getCharData("name") orelse return error.InvalidRegistry,
-            .decl_type = .{ .bitmask = .{ .bits_enum = ty.getAttribute("requires") } },
+            .decl_type = .{ .bitmask = .{ .bits_enum = ty.getAttribute("bitvalues") } },
         };
     }
 }
