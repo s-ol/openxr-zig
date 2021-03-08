@@ -84,20 +84,22 @@ const foreign_types = std.ComptimeStringMap([]const u8, .{
     .{ "Display", "opaque {}" },
     .{ "VisualID", @typeName(c_uint) },
     .{ "Window", @typeName(c_ulong) },
-    .{ "RROutput", @typeName(c_ulong) },
-    .{ "wl_display", "opaque {}" },
-    .{ "wl_surface", "opaque {}" },
-    .{ "HINSTANCE", "std.os.HINSTANCE" },
-    .{ "HWND", "*opaque {}" },
-    .{ "HMONITOR", "*opaque {}" },
-    .{ "HANDLE", "std.os.HANDLE" },
-    .{ "SECURITY_ATTRIBUTES", "std.os.SECURITY_ATTRIBUTES" },
-    .{ "DWORD", "std.os.DWORD" },
-    .{ "LPCWSTR", "std.os.LPCWSTR" },
+    .{ "xcb_glx_fbconfig_t", "opaque {}" },
+    .{ "xcb_glx_drawable_t", "opaque {}" },
+    .{ "xcb_glx_context_t", "opaque {}" },
     .{ "xcb_connection_t", "opaque {}" },
     .{ "xcb_visualid_t", @typeName(u32) },
     .{ "xcb_window_t", @typeName(u32) },
-    .{ "zx_handle_t", @typeName(u32) },
+    .{ "VkAllocationCallbacks", "@import(\"vulkan\").AllocationCallbacks" },
+    .{ "VkDevice", "@import(\"vulkan\").Device" },
+    .{ "VkDeviceCreateInfo", "@import(\"vulkan\").DeviceCreateInfo" },
+    .{ "VkFormat", "@import(\"vulkan\").Format" },
+    .{ "VkImage", "@import(\"vulkan\").Image" },
+    .{ "VkInstance", "@import(\"vulkan\").Instance" },
+    .{ "VkInstanceCreateInfo", "@import(\"vulkan\").InstanceCreateInfo" },
+    .{ "VkPhysicalDevice", "@import(\"vulkan\").PhysicalDevice" },
+    .{ "VkResult", "@import(\"vulkan\").Result" },
+    .{ "PFN_vkGetInstanceProcAddr", "@import(\"vulkan\").PfnGetInstanceProcAddr" },
 });
 
 const initialized_types = std.ComptimeStringMap([]const u8, .{
@@ -754,7 +756,7 @@ fn Renderer(comptime WriterType: type) type {
             if (bits.fields.len == 0) {
                 try self.writer.writeAll("_reserved_bits: Flags64 = 0,");
             } else {
-                var flags_by_bitpos = [_]?[]const u8{null} ** 32;
+                var flags_by_bitpos = [_]?[]const u8{null} ** 64;
                 for (bits.fields) |field| {
                     if (field.value == .bitpos) {
                         flags_by_bitpos[field.value.bitpos] = field.name;
