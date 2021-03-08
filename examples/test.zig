@@ -24,12 +24,13 @@ fn getProcAddr(instance: xr.Instance, name: [*:0]const u8) xr.PfnVoidFunction {
 pub fn main() !void {
     var name: [128] u8 = undefined;
     std.mem.copy(u8, name[0..], "openxr-zig-test" ++ [_]u8{0});
+    const zero = [_:0]u8{0};
 
     const xrb = try BaseDispatch.load(getProcAddr);
     const inst = try xrb.createInstance(.{
         .type = .type_instance_create_info,
         .next = null,
-        .create_flags = xr.InstanceCreateFlags.fromInt(0),
+        .create_flags = .{},
         .application_info = .{
             .application_name = name,
             .application_version = 0,
@@ -38,9 +39,9 @@ pub fn main() !void {
             .api_version = xr.makeVersion(1, 0, 0),
         },
         .enabled_api_layer_count = 0,
-        .enabled_api_layer_names = @intToPtr([*]const [*:0]const u8, 0x10),
+        .enabled_api_layer_names = @ptrCast([*]const [*:0]const u8, &zero),
         .enabled_extension_count = 0,
-        .enabled_extension_names = @intToPtr([*]const [*:0]const u8, 0x10),
+        .enabled_extension_names = @ptrCast([*]const [*:0]const u8, &zero),
     });
     
     const xri = try InstanceDispatch.load(inst, getProcAddr);
