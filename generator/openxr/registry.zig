@@ -73,8 +73,7 @@ pub const Enum = struct {
     pub const Value = union(enum) {
         bitpos: u5, // 1 << bitpos
         bit_vector: i32, // Combined flags & some vendor IDs
-        int: i32,
-        alias: struct {
+        int: i32, alias: struct {
             name: []const u8,
             is_compat_alias: bool,
         }
@@ -113,8 +112,7 @@ pub const Command = struct {
 
 pub const Pointer = struct {
     pub const PointerSize = union(enum) {
-        one,
-        many, // The length is given by some complex expression, possibly involving another field
+        one, many, // The length is given by some complex expression, possibly involving another field
         other_field: []const u8, // The length is given by some other field or parameter
         zero_terminated
     };

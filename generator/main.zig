@@ -31,8 +31,8 @@ pub fn main() !void {
                 \\$OPENXR_SDK/x86_64/share/openxr/registry/xr.xml.
                 \\
                 \\
-                ++ usage,
-                .{ prog_name },
+                    ++ usage,
+                .{prog_name},
             );
             return;
         } else if (maybe_xml_path == null) {
@@ -40,17 +40,17 @@ pub fn main() !void {
         } else if (maybe_out_path == null) {
             maybe_out_path = arg;
         } else {
-            try stderr.writer().print("Error: Superficial argument '{s}'\n", .{ arg });
+            try stderr.writer().print("Error: Superficial argument '{s}'\n", .{arg});
         }
     }
 
     const xml_path = maybe_xml_path orelse {
-        try stderr.writer().print("Error: Missing required argument <spec xml path>\n" ++ usage, .{ prog_name });
+        try stderr.writer().print("Error: Missing required argument <spec xml path>\n" ++ usage, .{prog_name});
         return;
     };
 
     const out_path = maybe_out_path orelse {
-        try stderr.writer().print("Error: Missing required argument <output zig source>\n" ++ usage, .{ prog_name });
+        try stderr.writer().print("Error: Missing required argument <output zig source>\n" ++ usage, .{prog_name});
         return;
     };
 

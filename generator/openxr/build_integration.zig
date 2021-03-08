@@ -40,7 +40,7 @@ pub const GenerateStep = struct {
                 .name = "openxr",
                 .path = full_out_path,
                 .dependencies = null,
-            }
+            },
         };
         return self;
     }
@@ -52,7 +52,7 @@ pub const GenerateStep = struct {
     pub fn initFromSdk(builder: *Builder, sdk_path: []const u8, out_path: []const u8) *GenerateStep {
         const spec_path = std.fs.path.join(
             builder.allocator,
-            &[_][]const u8{sdk_path, "share/openxr/registry/xr.xml"},
+            &[_][]const u8{ sdk_path, "share/openxr/registry/xr.xml" },
         ) catch unreachable;
 
         return init(builder, spec_path, out_path);

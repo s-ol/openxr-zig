@@ -296,7 +296,7 @@ pub const Generator = struct {
                         bitmask.bits_enum = bits_enum;
                     }
                 },
-                else => {}
+                else => {},
             }
         }
     }

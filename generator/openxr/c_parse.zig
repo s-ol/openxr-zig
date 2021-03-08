@@ -53,9 +53,9 @@ pub const CTokenizer = struct {
 
     fn consume(self: *CTokenizer) !u8 {
         return if (self.offset < self.source.len)
-                return self.consumeNoEof()
-            else
-                return null;
+            return self.consumeNoEof()
+        else
+            return null;
     }
 
     fn keyword(self: *CTokenizer) Token {
@@ -70,20 +70,20 @@ pub const CTokenizer = struct {
             }
         }
 
-        const token_text = self.source[start .. self.offset];
+        const token_text = self.source[start..self.offset];
 
         const kind = if (mem.eql(u8, token_text, "typedef"))
-                Token.Kind.kw_typedef
-            else if (mem.eql(u8, token_text, "const"))
-                Token.Kind.kw_const
-            else if (mem.eql(u8, token_text, "XRAPI_PTR"))
-                Token.Kind.kw_xrapi_ptr
-            else if (mem.eql(u8, token_text, "struct"))
-                Token.Kind.kw_struct
-            else
-                Token.Kind.id;
+            Token.Kind.kw_typedef
+        else if (mem.eql(u8, token_text, "const"))
+            Token.Kind.kw_const
+        else if (mem.eql(u8, token_text, "XRAPI_PTR"))
+            Token.Kind.kw_xrapi_ptr
+        else if (mem.eql(u8, token_text, "struct"))
+            Token.Kind.kw_struct
+        else
+            Token.Kind.id;
 
-        return .{.kind = kind, .text = token_text};
+        return .{ .kind = kind, .text = token_text };
     }
 
     fn int(self: *CTokenizer) Token {
@@ -100,7 +100,7 @@ pub const CTokenizer = struct {
 
         return .{
             .kind = .int,
-            .text = self.source[start .. self.offset],
+            .text = self.source[start..self.offset],
         };
     }
 
@@ -115,7 +115,7 @@ pub const CTokenizer = struct {
 
     pub fn next(self: *CTokenizer) !?Token {
         self.skipws();
-        if (mem.startsWith(u8, self.source[self.offset ..], "//") or self.in_comment) {
+        if (mem.startsWith(u8, self.source[self.offset..], "//") or self.in_comment) {
             const end = mem.indexOfScalarPos(u8, self.source, self.offset, '\n') orelse {
                 self.offset = self.source.len;
                 self.in_comment = true;
@@ -143,14 +143,14 @@ pub const CTokenizer = struct {
             ']' => kind = .rbracket,
             '(' => kind = .lparen,
             ')' => kind = .rparen,
-            else => return error.UnexpectedCharacter
+            else => return error.UnexpectedCharacter,
         }
 
         const start = self.offset;
         _ = self.consumeNoEof();
         return Token{
             .kind = kind,
-            .text = self.source[start .. self.offset]
+            .text = self.source[start..self.offset],
         };
     }
 };
@@ -173,11 +173,11 @@ pub const XmlCTokenizer = struct {
 
         const text = elem.children.items[0].CharData;
         if (mem.eql(u8, elem.tag, "type")) {
-            return Token{.kind = .type_name, .text = text};
+            return Token{ .kind = .type_name, .text = text };
         } else if (mem.eql(u8, elem.tag, "enum")) {
-            return Token{.kind = .enum_name, .text = text};
+            return Token{ .kind = .enum_name, .text = text };
         } else if (mem.eql(u8, elem.tag, "name")) {
-            return Token{.kind = .name, .text = text};
+            return Token{ .kind = .name, .text = text };
         } else if (mem.eql(u8, elem.tag, "comment")) {
             return null;
         } else {
@@ -206,7 +206,7 @@ pub const XmlCTokenizer = struct {
 
             if (self.it.next()) |child| {
                 switch (child.*) {
-                    .CharData => |cdata| self.ctok = CTokenizer{.source = cdata, .in_comment = in_comment},
+                    .CharData => |cdata| self.ctok = CTokenizer{ .source = cdata, .in_comment = in_comment },
                     .Comment => {}, // xml comment
                     .Element => |elem| if (!in_comment) if (try elemToToken(elem)) |tok| return tok,
                 }
@@ -257,25 +257,25 @@ pub fn parseTypedef(allocator: *Allocator, xctok: *XmlCTokenizer) !registry.Decl
 
             return registry.Declaration{
                 .name = decl.name orelse return error.MissingTypeIdentifier,
-                .decl_type = .{.typedef = decl.decl_type},
+                .decl_type = .{ .typedef = decl.decl_type },
             };
         },
         .type_name => {
             if (!mem.eql(u8, first_tok.text, "XR_DEFINE_ATOM")) {
                 return error.InvalidSyntax;
             }
-            
+
             _ = try xctok.expect(.lparen);
             const name = try xctok.expect(.name);
             _ = try xctok.expect(.rparen);
-            
+
             return registry.Declaration{
                 .name = name.text,
-                .decl_type = .{.typedef = TypeInfo { .name = "uint64_t" }},
+                .decl_type = .{ .typedef = TypeInfo{ .name = "uint64_t" } },
             };
         },
         else => {
-            std.debug.print("unexpected first token in typedef: {}\n", .{ first_tok.kind });
+            std.debug.print("unexpected first token in typedef: {}\n", .{first_tok.kind});
             return error.InvalidSyntax;
         },
     };
@@ -284,7 +284,7 @@ pub fn parseTypedef(allocator: *Allocator, xctok: *XmlCTokenizer) !registry.Decl
 // MEMBER = DECLARATION (':' int)?
 pub fn parseMember(allocator: *Allocator, xctok: *XmlCTokenizer) !registry.Container.Field {
     const decl = try parseDeclaration(allocator, xctok);
-    var field = registry.Container.Field {
+    var field = registry.Container.Field{
         .name = decl.name orelse return error.MissingTypeIdentifier,
         .field_type = decl.decl_type,
         .bits = null,
@@ -317,7 +317,7 @@ pub fn parseParamOrProto(allocator: *Allocator, xctok: *XmlCTokenizer) !registry
     }
     return registry.Declaration{
         .name = decl.name orelse return error.MissingTypeIdentifier,
-        .decl_type = .{.typedef = decl.decl_type},
+        .decl_type = .{ .typedef = decl.decl_type },
     };
 }
 
@@ -356,7 +356,7 @@ fn parseDeclaration(allocator: *Allocator, xctok: *XmlCTokenizer) ParseError!Dec
     if (tok.kind != .type_name and tok.kind != .id) return error.InvalidSyntax;
     const type_name = tok.text;
 
-    var type_info = TypeInfo{.name = type_name};
+    var type_info = TypeInfo{ .name = type_name };
 
     // Parse pointers
     type_info = try parsePointers(allocator, xctok, inner_is_const, type_info);
@@ -388,7 +388,7 @@ fn parseDeclaration(allocator: *Allocator, xctok: *XmlCTokenizer) ParseError!Dec
             .array = .{
                 .size = array_size,
                 .child = child,
-            }
+            },
         };
 
         // update the inner_type pointer so it points to the proper
@@ -426,8 +426,8 @@ fn parseFnPtrSuffix(allocator: *Allocator, xctok: *XmlCTokenizer, return_type: T
                 .return_type = return_type_heap,
                 .success_codes = &[_][]const u8{},
                 .error_codes = &[_][]const u8{},
-            }
-        }
+            },
+        },
     };
 
     const first_param = try parseDeclaration(allocator, xctok);
@@ -523,10 +523,10 @@ fn parseArrayDeclarator(xctok: *XmlCTokenizer) !?ArraySize {
             .int = std.fmt.parseInt(usize, size_tok.text, 10) catch |err| switch (err) {
                 error.Overflow => return error.Overflow,
                 error.InvalidCharacter => unreachable,
-            }
+            },
         },
-        .enum_name => .{.alias = size_tok.text},
-        else => return error.InvalidSyntax
+        .enum_name => .{ .alias = size_tok.text },
+        else => return error.InvalidSyntax,
     };
 
     _ = try xctok.expect(.rbracket);
@@ -574,33 +574,30 @@ fn testTokenizer(tokenizer: anytype, expected_tokens: []const Token) void {
 }
 
 test "CTokenizer" {
-    var ctok = CTokenizer {
-        .source = \\typedef ([const)]** XRAPI_PTR 123,;aaaa
+    var ctok = CTokenizer{
+        .source =
+        \\typedef ([const)]** XRAPI_PTR 123,;aaaa
     };
 
-    testTokenizer(
-        &ctok,
-        &[_]Token{
-            .{.kind = .kw_typedef, .text = "typedef"},
-            .{.kind = .lparen, .text = "("},
-            .{.kind = .lbracket, .text = "["},
-            .{.kind = .kw_const, .text = "const"},
-            .{.kind = .rparen, .text = ")"},
-            .{.kind = .rbracket, .text = "]"},
-            .{.kind = .star, .text = "*"},
-            .{.kind = .star, .text = "*"},
-            .{.kind = .kw_xrapi_ptr, .text = "XRAPI_PTR"},
-            .{.kind = .int, .text = "123"},
-            .{.kind = .comma, .text = ","},
-            .{.kind = .semicolon, .text = ";"},
-            .{.kind = .id, .text = "aaaa"},
-        }
-    );
+    testTokenizer(&ctok, &[_]Token{
+        .{ .kind = .kw_typedef, .text = "typedef" },
+        .{ .kind = .lparen, .text = "(" },
+        .{ .kind = .lbracket, .text = "[" },
+        .{ .kind = .kw_const, .text = "const" },
+        .{ .kind = .rparen, .text = ")" },
+        .{ .kind = .rbracket, .text = "]" },
+        .{ .kind = .star, .text = "*" },
+        .{ .kind = .star, .text = "*" },
+        .{ .kind = .kw_xrapi_ptr, .text = "XRAPI_PTR" },
+        .{ .kind = .int, .text = "123" },
+        .{ .kind = .comma, .text = "," },
+        .{ .kind = .semicolon, .text = ";" },
+        .{ .kind = .id, .text = "aaaa" },
+    });
 }
 
 test "XmlCTokenizer" {
-    const document = try xml.parse(
-        testing.allocator,
+    const document = try xml.parse(testing.allocator,
         \\<root>// comment <name>commented name</name> <type>commented type</type> trailing
         \\    typedef void (XRAPI_PTR *<name>PFN_xrVoidFunction</name>)(void);
         \\</root>
@@ -609,27 +606,23 @@ test "XmlCTokenizer" {
 
     var xctok = XmlCTokenizer.init(document.root);
 
-    testTokenizer(
-        &xctok,
-        &[_]Token{
-            .{.kind = .kw_typedef, .text = "typedef"},
-            .{.kind = .id, .text = "void"},
-            .{.kind = .lparen, .text = "("},
-            .{.kind = .kw_xrapi_ptr, .text = "XRAPI_PTR"},
-            .{.kind = .star, .text = "*"},
-            .{.kind = .name, .text = "PFN_xrVoidFunction"},
-            .{.kind = .rparen, .text = ")"},
-            .{.kind = .lparen, .text = "("},
-            .{.kind = .id, .text = "void"},
-            .{.kind = .rparen, .text = ")"},
-            .{.kind = .semicolon, .text = ";"},
-        }
-    );
+    testTokenizer(&xctok, &[_]Token{
+        .{ .kind = .kw_typedef, .text = "typedef" },
+        .{ .kind = .id, .text = "void" },
+        .{ .kind = .lparen, .text = "(" },
+        .{ .kind = .kw_xrapi_ptr, .text = "XRAPI_PTR" },
+        .{ .kind = .star, .text = "*" },
+        .{ .kind = .name, .text = "PFN_xrVoidFunction" },
+        .{ .kind = .rparen, .text = ")" },
+        .{ .kind = .lparen, .text = "(" },
+        .{ .kind = .id, .text = "void" },
+        .{ .kind = .rparen, .text = ")" },
+        .{ .kind = .semicolon, .text = ";" },
+    });
 }
 
 test "parseTypedef" {
-    const document = try xml.parse(
-        testing.allocator,
+    const document = try xml.parse(testing.allocator,
         \\<root> // comment <name>commented name</name> trailing
         \\    typedef const struct <type>Python</type>* pythons[4];
         \\ // more comments
@@ -646,7 +639,7 @@ test "parseTypedef" {
 
     testing.expectEqualSlices(u8, "pythons", decl.name);
     const array = decl.decl_type.typedef.array;
-    testing.expectEqual(ArraySize{.int = 4}, array.size);
+    testing.expectEqual(ArraySize{ .int = 4 }, array.size);
     const ptr = array.child.pointer;
     testing.expectEqual(true, ptr.is_const);
     testing.expectEqualSlices(u8, "Python", ptr.child.name);
