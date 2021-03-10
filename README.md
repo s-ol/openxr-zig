@@ -15,6 +15,9 @@ openxr-zig is automatically tested daily against the latest xr.xml and zig, and 
 
 openxr-zig aims to be always compatible with the ever-changing Zig master branch (however, development may lag a few days behind). Sometimes, the Zig master branch breaks a bunch of functionality however, which may make the latest version openxr-zig incompatible with older releases of Zig. Versions compatible with older versions of zig are marked with the tag `zig-<version>`.
 
+## Differences from Spec
+* `XR_SESSION_STATE_LOSS_PENDING` results are treated as errorcodes, contrary to the spec. This way, the API wrapper returns them as part of the error union, so that the actual return type can be allocated more usefully.
+
 ## Features
 ### CLI-interface
 A CLI-interface is provided to generate xr.zig from the [OpenXR XML registry](https://github.com/KhronosGroup/OpenXR-Docs/blob/master/xml), which is built by default when invoking `zig build` in the project root. To generate xr.zig, simply invoke the program as follows:
