@@ -686,6 +686,8 @@ fn Renderer(comptime WriterType: type) type {
 
                 try self.writer.writeAll(" = .");
                 try self.writeIdentifierWithCase(.snake, stype["XR_TYPE_".len..]);
+            } else if (mem.eql(u8, field.name, "w") and mem.eql(u8, container_name, "XrQuaternionf")) {
+                try self.writer.writeAll(" = 1");
             } else if (initialized_types.get(container_name)) |value| {
                 try self.writer.writeAll(" = ");
                 try self.writer.writeAll(value);
