@@ -462,23 +462,23 @@ fn parseCommand(allocator: Allocator, elem: *xml.Element) !registry.Declaration 
     const return_type = try allocator.create(registry.TypeInfo);
     return_type.* = command_decl.decl_type.typedef;
 
-    var success_codes = if (elem.getAttribute("successcodes")) |codes|
+    var success_codes: [][]const u8 = if (elem.getAttribute("successcodes")) |codes|
         try splitCommaAlloc(allocator, codes)
     else
         &[_][]const u8{};
 
-    var error_codes = if (elem.getAttribute("errorcodes")) |codes|
+    var error_codes: [][]const u8 = if (elem.getAttribute("errorcodes")) |codes|
         try splitCommaAlloc(allocator, codes)
     else
         &[_][]const u8{};
-        
-    for (success_codes) |code, session_i| {
+
+    for (success_codes, 0..) |code, session_i| {
         if (mem.eql(u8, code, "XR_SESSION_LOSS_PENDING")) {
             var move_i = session_i + 1;
             while (move_i < success_codes.len) : (move_i += 1) {
                 success_codes[move_i - 1] = success_codes[move_i];
             }
-            success_codes = allocator.shrink(success_codes, success_codes.len);
+            success_codes = success_codes[0..success_codes.len];
             success_codes.len = success_codes.len - 1;
 
             const old_error_codes = error_codes;
@@ -486,6 +486,7 @@ fn parseCommand(allocator: Allocator, elem: *xml.Element) !registry.Declaration 
             mem.copy([]const u8, error_codes, old_error_codes);
             error_codes[error_codes.len - 1] = code;
             allocator.free(old_error_codes);
+            break;
         }
     }
 
