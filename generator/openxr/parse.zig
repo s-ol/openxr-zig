@@ -512,7 +512,7 @@ fn parseCommand(allocator: Allocator, elem: *xml.Element) !registry.Declaration 
 }
 
 fn parseApiConstants(allocator: Allocator, root: *xml.Element) ![]registry.ApiConstant {
-    var enums = blk: {
+    const enums = blk: {
         var it = root.findChildrenByTag("enums");
         while (it.next()) |child| {
             const name = child.getAttribute("name") orelse continue;
@@ -524,7 +524,7 @@ fn parseApiConstants(allocator: Allocator, root: *xml.Element) ![]registry.ApiCo
         return error.InvalidRegistry;
     };
 
-    var types = root.findChildByTag("types") orelse return error.InvalidRegistry;
+    const types = root.findChildByTag("types") orelse return error.InvalidRegistry;
     const n_defines = blk: {
         var n_defines: usize = 0;
         var it = types.findChildrenByTag("type");
@@ -538,7 +538,27 @@ fn parseApiConstants(allocator: Allocator, root: *xml.Element) ![]registry.ApiCo
         break :blk n_defines;
     };
 
-    const constants = try allocator.alloc(registry.ApiConstant, enums.children.len + n_defines);
+    const extensions = root.findChildByTag("extensions") orelse return error.InvalidRegistry;
+    const n_extension_defines = blk: {
+        var n_extension_defines: usize = 0;
+        var it = extensions.findChildrenByTag("extension");
+        while (it.next()) |ext| {
+            const require = ext.findChildByTag("require") orelse return error.InvalidRegistry;
+            var defines = require.findChildrenByTag("enum");
+            while (defines.next()) |e| {
+                if (e.getAttribute("offset") != null and e.getAttribute("extends") != null) continue;
+
+                const name = e.getAttribute("name") orelse continue;
+                if (mem.endsWith(u8, name, "SPEC_VERSION")) continue;
+                if (mem.endsWith(u8, name, "EXTENSION_NAME")) continue;
+
+                n_extension_defines += 1;
+            }
+        }
+        break :blk n_extension_defines;
+    };
+
+    const constants = try allocator.alloc(registry.ApiConstant, enums.children.len + n_defines + n_extension_defines);
 
     var i: usize = 0;
     var it = enums.findChildrenByTag("enum");
@@ -559,6 +579,7 @@ fn parseApiConstants(allocator: Allocator, root: *xml.Element) ![]registry.ApiCo
     }
 
     i += try parseDefines(types, constants[i..]);
+    i += try parseExtensionDefines(extensions, constants[i..]);
     return constants[0..i];
 }
 
@@ -572,19 +593,50 @@ fn parseDefines(types: *xml.Element, out: []registry.ApiConstant) !usize {
         }
 
         const name = ty.getCharData("name") orelse continue;
-        if (mem.eql(u8, name, "XR_HEADER_VERSION")) {
-            out[i] = .{
-                .name = name,
-                .value = .{ .expr = mem.trim(u8, ty.children[2].char_data, " ") },
-            };
-        } else {
+        if (mem.eql(u8, name, "XR_CURRENT_API_VERSION")) {
             var xctok = cparse.XmlCTokenizer.init(ty);
             out[i] = .{
                 .name = name,
                 .value = .{ .version = cparse.parseVersion(&xctok) catch continue },
             };
+        } else {
+            const expr = mem.trim(u8, ty.children[2].char_data, " ");
+
+            // TODO this doesn't work with all #defines yet (need to handle hex, U/L suffix, etc.)
+            _ = std.fmt.parseInt(i32, expr, 10) catch continue;
+
+            out[i] = .{
+                .name = name,
+                .value = .{ .expr = expr },
+            };
         }
         i += 1;
+    }
+
+    return i;
+}
+
+fn parseExtensionDefines(extensions: *xml.Element, out: []registry.ApiConstant) !usize {
+    var i: usize = 0;
+    var it = extensions.findChildrenByTag("extension");
+
+    while (it.next()) |ext| {
+        const require = ext.findChildByTag("require") orelse return error.InvalidRegistry;
+        var defines = require.findChildrenByTag("enum");
+        while (defines.next()) |e| {
+            if (e.getAttribute("offset") != null and e.getAttribute("extends") != null) continue;
+
+            const name = e.getAttribute("name") orelse continue;
+            if (mem.endsWith(u8, name, "SPEC_VERSION")) continue;
+            if (mem.endsWith(u8, name, "EXTENSION_NAME")) continue;
+
+            out[i] = .{
+                .name = name,
+                .value = .{ .expr = e.getAttribute("value") orelse continue },
+            };
+
+            i += 1;
+        }
     }
 
     return i;
