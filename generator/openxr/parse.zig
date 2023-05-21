@@ -17,14 +17,13 @@ pub const ParseResult = struct {
     }
 };
 
-pub fn parseXml(backing_allocator: *Allocator, root: *xml.Element) !ParseResult {
+pub fn parseXml(backing_allocator: Allocator, root: *xml.Element) !ParseResult {
     var arena = ArenaAllocator.init(backing_allocator);
     errdefer arena.deinit();
 
-    const allocator = &arena.allocator;
+    const allocator = arena.allocator();
 
     var reg = registry.Registry{
-        .copyright = root.getCharData("comment") orelse return error.InvalidRegistry,
         .decls = try parseDeclarations(allocator, root),
         .api_constants = try parseApiConstants(allocator, root),
         .tags = try parseTags(allocator, root),
@@ -38,21 +37,21 @@ pub fn parseXml(backing_allocator: *Allocator, root: *xml.Element) !ParseResult 
     };
 }
 
-fn parseDeclarations(allocator: *Allocator, root: *xml.Element) ![]registry.Declaration {
+fn parseDeclarations(allocator: Allocator, root: *xml.Element) ![]registry.Declaration {
     var types_elem = root.findChildByTag("types") orelse return error.InvalidRegistry;
     var commands_elem = root.findChildByTag("commands") orelse return error.InvalidRegistry;
 
-    const decl_upper_bound = types_elem.children.items.len + commands_elem.children.items.len;
+    const decl_upper_bound = types_elem.children.len + commands_elem.children.len;
     const decls = try allocator.alloc(registry.Declaration, decl_upper_bound);
 
     var count: usize = 0;
     count += try parseTypes(allocator, decls, types_elem);
     count += try parseEnums(allocator, decls[count..], root);
     count += try parseCommands(allocator, decls[count..], commands_elem);
-    return allocator.shrink(decls, count);
+    return decls[0..count];
 }
 
-fn parseTypes(allocator: *Allocator, out: []registry.Declaration, types_elem: *xml.Element) !usize {
+fn parseTypes(allocator: Allocator, out: []registry.Declaration, types_elem: *xml.Element) !usize {
     var i: usize = 0;
     var it = types_elem.findChildrenByTag("type");
     while (it.next()) |ty| {
@@ -74,7 +73,7 @@ fn parseTypes(allocator: *Allocator, out: []registry.Declaration, types_elem: *x
             } else if (mem.eql(u8, category, "funcpointer")) {
                 break :blk try parseFuncPointer(allocator, ty);
             } else if (mem.eql(u8, category, "enum")) {
-                break :blk (try parseEnumAlias(allocator, ty)) orelse continue;
+                break :blk (try parseEnumAlias(ty)) orelse continue;
             }
 
             continue;
@@ -142,22 +141,22 @@ fn parseHandleType(ty: *xml.Element) !registry.Declaration {
     }
 }
 
-fn parseBaseType(allocator: *Allocator, ty: *xml.Element) !registry.Declaration {
+fn parseBaseType(allocator: Allocator, ty: *xml.Element) !registry.Declaration {
     const name = ty.getCharData("name") orelse return error.InvalidRegistry;
-    if (ty.getCharData("type")) |x| {
+    if (ty.getCharData("type")) |_| {
         var tok = cparse.XmlCTokenizer.init(ty);
-        return try cparse.parseTypedef(allocator, &tok);
+        return try cparse.parseTypedef(allocator, &tok, false);
     } else {
         // Either ANativeWindow, AHardwareBuffer or CAMetalLayer. The latter has a lot of
         // macros, which is why this part is not built into the xml/c parser.
         return registry.Declaration{
             .name = name,
-            .decl_type = .{ .external = {} },
+            .decl_type = .{ .foreign = .{ .depends = &.{} } },
         };
     }
 }
 
-fn parseContainer(allocator: *Allocator, ty: *xml.Element, is_union: bool) !registry.Declaration {
+fn parseContainer(allocator: Allocator, ty: *xml.Element, is_union: bool) !registry.Declaration {
     const name = ty.getAttribute("name") orelse return error.InvalidRegistry;
 
     if (ty.getAttribute("alias")) |alias| {
@@ -167,29 +166,55 @@ fn parseContainer(allocator: *Allocator, ty: *xml.Element, is_union: bool) !regi
         };
     }
 
-    var members = try allocator.alloc(registry.Container.Field, ty.children.items.len);
+    var members = try allocator.alloc(registry.Container.Field, ty.children.len);
 
     var i: usize = 0;
     var it = ty.findChildrenByTag("member");
     var maybe_stype: ?[]const u8 = null;
     while (it.next()) |member| {
         var xctok = cparse.XmlCTokenizer.init(member);
-        members[i] = try cparse.parseMember(allocator, &xctok);
+        members[i] = try cparse.parseMember(allocator, &xctok, false);
         if (mem.eql(u8, members[i].name, "type")) {
             if (member.getAttribute("values")) |stype| {
                 maybe_stype = stype;
             }
         }
 
+        if (member.getAttribute("optional")) |optionals| {
+            var optional_it = mem.split(u8, optionals, ",");
+            if (optional_it.next()) |first_optional| {
+                members[i].is_optional = mem.eql(u8, first_optional, "true");
+            } else {
+                // Optional is empty, probably incorrect.
+                return error.InvalidRegistry;
+            }
+        }
         i += 1;
     }
 
-    members = allocator.shrink(members, i);
+    members = members[0..i];
+
+    var maybe_extends: ?[][]const u8 = null;
+    if (ty.getAttribute("structextends")) |extends| {
+        const n_structs = std.mem.count(u8, extends, ",") + 1;
+        maybe_extends = try allocator.alloc([]const u8, n_structs);
+        var struct_extends = std.mem.split(u8, extends, ",");
+        var j: usize = 0;
+        while (struct_extends.next()) |struct_extend| {
+            maybe_extends.?[j] = struct_extend;
+            j += 1;
+        }
+    }
 
     it = ty.findChildrenByTag("member");
     for (members) |*member| {
         const member_elem = it.next().?;
         try parsePointerMeta(.{ .container = members }, &member.field_type, member_elem);
+
+        // next isn't always properly marked as optional, so just manually override it,
+        if (mem.eql(u8, member.name, "next")) {
+            member.field_type.pointer.is_optional = true;
+        }
     }
 
     return registry.Declaration{
@@ -199,17 +224,18 @@ fn parseContainer(allocator: *Allocator, ty: *xml.Element, is_union: bool) !regi
                 .stype = maybe_stype,
                 .fields = members,
                 .is_union = is_union,
+                .extends = maybe_extends,
             },
         },
     };
 }
 
-fn parseFuncPointer(allocator: *Allocator, ty: *xml.Element) !registry.Declaration {
+fn parseFuncPointer(allocator: Allocator, ty: *xml.Element) !registry.Declaration {
     var xctok = cparse.XmlCTokenizer.init(ty);
-    return try cparse.parseTypedef(allocator, &xctok);
+    return try cparse.parseTypedef(allocator, &xctok, true);
 }
 
-// For some reason, the DeclarationType cannot be passed to lenToPointerSize, as
+// For some reason, the DeclarationType cannot be passed to lenToPointer, as
 // that causes the Zig compiler to generate invalid code for the function. Using a
 // dedicated enum fixes the issue...
 const Fields = union(enum) {
@@ -217,13 +243,14 @@ const Fields = union(enum) {
     container: []registry.Container.Field,
 };
 
-fn lenToPointerSize(fields: Fields, len: []const u8) registry.Pointer.PointerSize {
+// returns .{ size, nullable }
+fn lenToPointer(fields: Fields, len: []const u8) std.meta.Tuple(&.{ registry.Pointer.PointerSize, bool }) {
     switch (fields) {
         .command => |params| {
             for (params) |*param| {
                 if (mem.eql(u8, param.name, len)) {
                     param.is_buffer_len = true;
-                    return .{ .other_field = param.name };
+                    return .{ .{ .other_field = param.name }, false };
                 }
             }
         },
@@ -231,26 +258,30 @@ fn lenToPointerSize(fields: Fields, len: []const u8) registry.Pointer.PointerSiz
             for (members) |*member| {
                 if (mem.eql(u8, member.name, len)) {
                     member.is_buffer_len = true;
-                    return .{ .other_field = member.name };
+                    return .{ .{ .other_field = member.name }, member.is_optional };
                 }
             }
         },
     }
 
     if (mem.eql(u8, len, "null-terminated")) {
-        return .zero_terminated;
+        return .{ .zero_terminated, false };
     } else {
-        return .many;
+        return .{ .many, false };
     }
 }
 
 fn parsePointerMeta(fields: Fields, type_info: *registry.TypeInfo, elem: *xml.Element) !void {
     if (elem.getAttribute("len")) |lens| {
-        var it = mem.split(lens, ",");
+        var it = mem.split(u8, lens, ",");
         var current_type_info = type_info;
         while (current_type_info.* == .pointer) {
             // TODO: Check altlen
-            const size = if (it.next()) |len_str| lenToPointerSize(fields, len_str) else .one;
+            const size = if (it.next()) |len_str| blk: {
+                const size_optional = lenToPointer(fields, len_str);
+                current_type_info.pointer.is_optional = size_optional[1];
+                break :blk size_optional[0];
+            } else .many;
             current_type_info.pointer.size = size;
             current_type_info = current_type_info.pointer.child;
         }
@@ -258,12 +289,13 @@ fn parsePointerMeta(fields: Fields, type_info: *registry.TypeInfo, elem: *xml.El
         if (it.next()) |_| {
             // There are more elements in the `len` attribute than there are pointers
             // Something probably went wrong
+            std.log.err("len: {s}", .{lens});
             return error.InvalidRegistry;
         }
     }
 
     if (elem.getAttribute("optional")) |optionals| {
-        var it = mem.split(optionals, ",");
+        var it = mem.split(u8, optionals, ",");
         var current_type_info = type_info;
         while (current_type_info.* == .pointer) {
             if (it.next()) |current_optional| {
@@ -281,7 +313,7 @@ fn parsePointerMeta(fields: Fields, type_info: *registry.TypeInfo, elem: *xml.El
     }
 }
 
-fn parseEnumAlias(allocator: *Allocator, elem: *xml.Element) !?registry.Declaration {
+fn parseEnumAlias(elem: *xml.Element) !?registry.Declaration {
     if (elem.getAttribute("alias")) |alias| {
         const name = elem.getAttribute("name") orelse return error.InvalidRegistry;
         return registry.Declaration{
@@ -293,7 +325,7 @@ fn parseEnumAlias(allocator: *Allocator, elem: *xml.Element) !?registry.Declarat
     return null;
 }
 
-fn parseEnums(allocator: *Allocator, out: []registry.Declaration, root: *xml.Element) !usize {
+fn parseEnums(allocator: Allocator, out: []registry.Declaration, root: *xml.Element) !usize {
     var i: usize = 0;
     var it = root.findChildrenByTag("enums");
     while (it.next()) |enums| {
@@ -312,7 +344,7 @@ fn parseEnums(allocator: *Allocator, out: []registry.Declaration, root: *xml.Ele
     return i;
 }
 
-fn parseEnumFields(allocator: *Allocator, elem: *xml.Element) !registry.Enum {
+fn parseEnumFields(allocator: Allocator, elem: *xml.Element) !registry.Enum {
     // TODO: `type` was added recently, fall back to checking endswith FlagBits for older versions?
     const enum_type = elem.getAttribute("type") orelse return error.InvalidRegistry;
     const is_bitmask = mem.eql(u8, enum_type, "bitmask");
@@ -320,7 +352,7 @@ fn parseEnumFields(allocator: *Allocator, elem: *xml.Element) !registry.Enum {
         return error.InvalidRegistry;
     }
 
-    const fields = try allocator.alloc(registry.Enum.Field, elem.children.items.len);
+    const fields = try allocator.alloc(registry.Enum.Field, elem.children.len);
 
     var i: usize = 0;
     var it = elem.findChildrenByTag("enum");
@@ -330,7 +362,7 @@ fn parseEnumFields(allocator: *Allocator, elem: *xml.Element) !registry.Enum {
     }
 
     return registry.Enum{
-        .fields = allocator.shrink(fields, i),
+        .fields = fields[0..i],
         .is_bitmask = is_bitmask,
     };
 }
@@ -373,7 +405,7 @@ fn parseEnumField(field: *xml.Element) !registry.Enum.Field {
     };
 }
 
-fn parseCommands(allocator: *Allocator, out: []registry.Declaration, commands_elem: *xml.Element) !usize {
+fn parseCommands(allocator: Allocator, out: []registry.Declaration, commands_elem: *xml.Element) !usize {
     var i: usize = 0;
     var it = commands_elem.findChildrenByTag("command");
     while (it.next()) |elem| {
@@ -384,14 +416,14 @@ fn parseCommands(allocator: *Allocator, out: []registry.Declaration, commands_el
     return i;
 }
 
-fn splitCommaAlloc(allocator: *Allocator, text: []const u8) ![][]const u8 {
+fn splitCommaAlloc(allocator: Allocator, text: []const u8) ![][]const u8 {
     var n_codes: usize = 1;
     for (text) |c| {
         if (c == ',') n_codes += 1;
     }
 
     const codes = try allocator.alloc([]const u8, n_codes);
-    var it = mem.split(text, ",");
+    var it = mem.split(u8, text, ",");
     for (codes) |*code| {
         code.* = it.next().?;
     }
@@ -399,7 +431,7 @@ fn splitCommaAlloc(allocator: *Allocator, text: []const u8) ![][]const u8 {
     return codes;
 }
 
-fn parseCommand(allocator: *Allocator, elem: *xml.Element) !registry.Declaration {
+fn parseCommand(allocator: Allocator, elem: *xml.Element) !registry.Declaration {
     if (elem.getAttribute("alias")) |alias| {
         const name = elem.getAttribute("name") orelse return error.InvalidRegistry;
         return registry.Declaration{
@@ -410,15 +442,15 @@ fn parseCommand(allocator: *Allocator, elem: *xml.Element) !registry.Declaration
 
     const proto = elem.findChildByTag("proto") orelse return error.InvalidRegistry;
     var proto_xctok = cparse.XmlCTokenizer.init(proto);
-    const command_decl = try cparse.parseParamOrProto(allocator, &proto_xctok);
+    const command_decl = try cparse.parseParamOrProto(allocator, &proto_xctok, false);
 
-    var params = try allocator.alloc(registry.Command.Param, elem.children.items.len);
+    var params = try allocator.alloc(registry.Command.Param, elem.children.len);
 
     var i: usize = 0;
     var it = elem.findChildrenByTag("param");
     while (it.next()) |param| {
         var xctok = cparse.XmlCTokenizer.init(param);
-        const decl = try cparse.parseParamOrProto(allocator, &xctok);
+        const decl = try cparse.parseParamOrProto(allocator, &xctok, false);
         params[i] = .{
             .name = decl.name,
             .param_type = decl.decl_type.typedef,
@@ -457,7 +489,7 @@ fn parseCommand(allocator: *Allocator, elem: *xml.Element) !registry.Declaration
         }
     }
 
-    params = allocator.shrink(params, i);
+    params = params[0..i];
 
     it = elem.findChildrenByTag("param");
     for (params) |*param| {
@@ -478,7 +510,7 @@ fn parseCommand(allocator: *Allocator, elem: *xml.Element) !registry.Declaration
     };
 }
 
-fn parseApiConstants(allocator: *Allocator, root: *xml.Element) ![]registry.ApiConstant {
+fn parseApiConstants(allocator: Allocator, root: *xml.Element) ![]registry.ApiConstant {
     var enums = blk: {
         var it = root.findChildrenByTag("enums");
         while (it.next()) |child| {
@@ -505,7 +537,7 @@ fn parseApiConstants(allocator: *Allocator, root: *xml.Element) ![]registry.ApiC
         break :blk n_defines;
     };
 
-    const constants = try allocator.alloc(registry.ApiConstant, enums.children.items.len + n_defines);
+    const constants = try allocator.alloc(registry.ApiConstant, enums.children.len + n_defines);
 
     var i: usize = 0;
     var it = enums.findChildrenByTag("enum");
@@ -526,7 +558,7 @@ fn parseApiConstants(allocator: *Allocator, root: *xml.Element) ![]registry.ApiC
     }
 
     i += try parseDefines(types, constants[i..]);
-    return allocator.shrink(constants, i);
+    return constants[0..i];
 }
 
 fn parseDefines(types: *xml.Element, out: []registry.ApiConstant) !usize {
@@ -542,7 +574,7 @@ fn parseDefines(types: *xml.Element, out: []registry.ApiConstant) !usize {
         if (mem.eql(u8, name, "XR_HEADER_VERSION")) {
             out[i] = .{
                 .name = name,
-                .value = .{ .expr = mem.trim(u8, ty.children.items[2].CharData, " ") },
+                .value = .{ .expr = mem.trim(u8, ty.children[2].char_data, " ") },
             };
         } else {
             var xctok = cparse.XmlCTokenizer.init(ty);
@@ -557,9 +589,9 @@ fn parseDefines(types: *xml.Element, out: []registry.ApiConstant) !usize {
     return i;
 }
 
-fn parseTags(allocator: *Allocator, root: *xml.Element) ![]registry.Tag {
+fn parseTags(allocator: Allocator, root: *xml.Element) ![]registry.Tag {
     var tags_elem = root.findChildByTag("tags") orelse return error.InvalidRegistry;
-    const tags = try allocator.alloc(registry.Tag, tags_elem.children.items.len);
+    const tags = try allocator.alloc(registry.Tag, tags_elem.children.len);
 
     var i: usize = 0;
     var it = tags_elem.findChildrenByTag("tag");
@@ -572,10 +604,10 @@ fn parseTags(allocator: *Allocator, root: *xml.Element) ![]registry.Tag {
         i += 1;
     }
 
-    return allocator.shrink(tags, i);
+    return tags[0..i];
 }
 
-fn parseFeatures(allocator: *Allocator, root: *xml.Element) ![]registry.Feature {
+fn parseFeatures(allocator: Allocator, root: *xml.Element) ![]registry.Feature {
     var it = root.findChildrenByTag("feature");
     var count: usize = 0;
     while (it.next()) |_| count += 1;
@@ -591,14 +623,14 @@ fn parseFeatures(allocator: *Allocator, root: *xml.Element) ![]registry.Feature 
     return features;
 }
 
-fn parseFeature(allocator: *Allocator, feature: *xml.Element) !registry.Feature {
+fn parseFeature(allocator: Allocator, feature: *xml.Element) !registry.Feature {
     const name = feature.getAttribute("name") orelse return error.InvalidRegistry;
     const feature_level = blk: {
         const number = feature.getAttribute("number") orelse return error.InvalidRegistry;
         break :blk try splitFeatureLevel(number, ".");
     };
 
-    var requires = try allocator.alloc(registry.Require, feature.children.items.len);
+    var requires = try allocator.alloc(registry.Require, feature.children.len);
     var i: usize = 0;
     var it = feature.findChildrenByTag("require");
     while (it.next()) |require| {
@@ -609,7 +641,7 @@ fn parseFeature(allocator: *Allocator, feature: *xml.Element) !registry.Feature 
     return registry.Feature{
         .name = name,
         .level = feature_level,
-        .requires = allocator.shrink(requires, i),
+        .requires = requires[0..i],
     };
 }
 
@@ -659,7 +691,7 @@ fn enumExtOffsetToValue(extnumber: u31, offset: u31) u31 {
     return extension_value_base + (extnumber - 1) * extension_block + offset;
 }
 
-fn parseRequire(allocator: *Allocator, require: *xml.Element, extnumber: ?u31) !registry.Require {
+fn parseRequire(allocator: Allocator, require: *xml.Element, extnumber: ?u31) !registry.Require {
     var n_extends: usize = 0;
     var n_types: usize = 0;
     var n_commands: usize = 0;
@@ -709,18 +741,18 @@ fn parseRequire(allocator: *Allocator, require: *xml.Element, extnumber: ?u31) !
     };
 
     return registry.Require{
-        .extends = allocator.shrink(extends, i_extends),
-        .types = types,
-        .commands = commands,
+        .extends = extends[0..i_extends],
+        .types = types[0..i_types],
+        .commands = commands[0..i_commands],
         .required_feature_level = required_feature_level,
         .required_extension = require.getAttribute("extension"),
     };
 }
 
-fn parseExtensions(allocator: *Allocator, root: *xml.Element) ![]registry.Extension {
+fn parseExtensions(allocator: Allocator, root: *xml.Element) ![]registry.Extension {
     const extensions_elem = root.findChildByTag("extensions") orelse return error.InvalidRegistry;
 
-    const extensions = try allocator.alloc(registry.Extension, extensions_elem.children.items.len);
+    const extensions = try allocator.alloc(registry.Extension, extensions_elem.children.len);
     var i: usize = 0;
     var it = extensions_elem.findChildrenByTag("extension");
     while (it.next()) |extension| {
@@ -735,7 +767,7 @@ fn parseExtensions(allocator: *Allocator, root: *xml.Element) ![]registry.Extens
         i += 1;
     }
 
-    return allocator.shrink(extensions, i);
+    return extensions[0..i];
 }
 
 fn findExtVersion(extension: *xml.Element) !u32 {
@@ -754,7 +786,7 @@ fn findExtVersion(extension: *xml.Element) !u32 {
     return error.InvalidRegistry;
 }
 
-fn parseExtension(allocator: *Allocator, extension: *xml.Element) !registry.Extension {
+fn parseExtension(allocator: Allocator, extension: *xml.Element) !registry.Extension {
     const name = extension.getAttribute("name") orelse return error.InvalidRegistry;
     const platform = extension.getAttribute("platform");
     const version = try findExtVersion(extension);
@@ -799,7 +831,7 @@ fn parseExtension(allocator: *Allocator, extension: *xml.Element) !registry.Exte
         break :blk try splitCommaAlloc(allocator, requires_str);
     };
 
-    var requires = try allocator.alloc(registry.Require, extension.children.items.len);
+    var requires = try allocator.alloc(registry.Require, extension.children.len);
     var i: usize = 0;
     var it = extension.findChildrenByTag("require");
     while (it.next()) |require| {
@@ -816,12 +848,12 @@ fn parseExtension(allocator: *Allocator, extension: *xml.Element) !registry.Exte
         .promoted_to = promoted_to,
         .platform = platform,
         .required_feature_level = requires_core,
-        .requires = allocator.shrink(requires, i),
+        .requires = requires[0..i],
     };
 }
 
 fn splitFeatureLevel(ver: []const u8, split: []const u8) !registry.FeatureLevel {
-    var it = mem.split(ver, split);
+    var it = mem.split(u8, ver, split);
 
     const major = it.next() orelse return error.InvalidFeatureLevel;
     const minor = it.next() orelse return error.InvalidFeatureLevel;

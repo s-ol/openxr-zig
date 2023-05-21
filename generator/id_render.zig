@@ -2,6 +2,65 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 
+pub fn isZigPrimitiveType(name: []const u8) bool {
+    if (name.len > 1 and (name[0] == 'u' or name[0] == 'i')) {
+        for (name[1..]) |c| {
+            switch (c) {
+                '0'...'9' => {},
+                else => break,
+            }
+        } else return true;
+    }
+
+    const primitives = [_][]const u8{
+        "void",
+        "comptime_float",
+        "comptime_int",
+        "bool",
+        "isize",
+        "usize",
+        "f16",
+        "f32",
+        "f64",
+        "f128",
+        "noreturn",
+        "type",
+        "anyerror",
+        "c_short",
+        "c_ushort",
+        "c_int",
+        "c_uint",
+        "c_long",
+        "c_ulong",
+        "c_longlong",
+        "c_ulonglong",
+        "c_longdouble",
+        // Removed in stage 2 in https://github.com/ziglang/zig/commit/05cf44933d753f7a5a53ab289ea60fd43761de57,
+        // but these are still invalid identifiers in stage 1.
+        "undefined",
+        "true",
+        "false",
+        "null",
+    };
+
+    for (primitives) |reserved| {
+        if (mem.eql(u8, reserved, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+pub fn writeIdentifier(writer: anytype, id: []const u8) !void {
+    // https://github.com/ziglang/zig/issues/2897
+    if (isZigPrimitiveType(id)) {
+        try writer.print("@\"{}\"", .{std.zig.fmtEscapes(id)});
+    } else {
+        try writer.print("{}", .{std.zig.fmtId(id)});
+    }
+}
+
 pub const CaseStyle = enum {
     snake,
     screaming_snake,
@@ -69,7 +128,7 @@ pub const IdRenderer = struct {
     tags: []const []const u8,
     text_cache: std.ArrayList(u8),
 
-    pub fn init(allocator: *Allocator, tags: []const []const u8) IdRenderer {
+    pub fn init(allocator: Allocator, tags: []const []const u8) IdRenderer {
         return .{
             .tags = tags,
             .text_cache = std.ArrayList(u8).init(allocator),
@@ -83,7 +142,6 @@ pub const IdRenderer = struct {
     fn renderSnake(self: *IdRenderer, screaming: bool, id: []const u8, tag: ?[]const u8) !void {
         var it = SegmentIterator.init(id);
         var first = true;
-        const transform = if (screaming) std.ascii.toUpper else std.ascii.toLower;
 
         while (it.next()) |segment| {
             if (first) {
@@ -93,7 +151,7 @@ pub const IdRenderer = struct {
             }
 
             for (segment) |c| {
-                try self.text_cache.append(transform(c));
+                try self.text_cache.append(if (screaming) std.ascii.toUpper(c) else std.ascii.toLower(c));
             }
         }
 
@@ -101,7 +159,7 @@ pub const IdRenderer = struct {
             try self.text_cache.append('_');
 
             for (name) |c| {
-                try self.text_cache.append(transform(c));
+                try self.text_cache.append(if (screaming) std.ascii.toUpper(c) else std.ascii.toLower(c));
             }
         }
     }
@@ -138,14 +196,10 @@ pub const IdRenderer = struct {
         }
     }
 
-    pub fn render(self: IdRenderer, out: anytype, id: []const u8) !void {
-        try out.print("{z}", .{id});
-    }
-
     pub fn renderFmt(self: *IdRenderer, out: anytype, comptime fmt: []const u8, args: anytype) !void {
         self.text_cache.items.len = 0;
         try std.fmt.format(self.text_cache.writer(), fmt, args);
-        try out.print("{z}", .{self.text_cache.items});
+        try writeIdentifier(out, self.text_cache.items);
     }
 
     pub fn renderWithCase(self: *IdRenderer, out: anytype, case_style: CaseStyle, id: []const u8) !void {
@@ -162,7 +216,7 @@ pub const IdRenderer = struct {
             .camel => try self.renderCamel(false, adjusted_id, tag),
         }
 
-        try out.print("{z}", .{self.text_cache.items});
+        try writeIdentifier(out, self.text_cache.items);
     }
 
     pub fn getAuthorTag(self: IdRenderer, id: []const u8) ?[]const u8 {
