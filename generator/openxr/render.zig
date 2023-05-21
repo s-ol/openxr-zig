@@ -529,7 +529,7 @@ fn Renderer(comptime WriterType: type) type {
             if (optional) {
                 try self.writer.writeByte('?');
             }
-            try self.writer.writeAll("fn(");
+            try self.writer.writeAll("*const fn(");
             for (command_ptr.params) |param| {
                 try self.writeIdentifierWithCase(.snake, param.name);
                 try self.writer.writeAll(": ");
@@ -1102,7 +1102,9 @@ fn Renderer(comptime WriterType: type) type {
                 \\    var self: Self = undefined;
                 \\    inline for (std.meta.fields(Dispatch)) |field| {{
                 \\        const name = @ptrCast([*:0]const u8, field.name ++ "\x00");
-                \\        const cmd_ptr = loader({[first_arg]s}, name) orelse return error.CommandLoadFailure;
+                \\        var cmd_ptr: PfnVoidFunction = undefined;
+                \\        const result: Result = loader({[first_arg]s}, name, &cmd_ptr);
+                \\        if (result != .success) return error.CommandLoadFailure;
                 \\        @field(self.dispatch, field.name) = @ptrCast(field.type, cmd_ptr);
                 \\    }}
                 \\    return self;
@@ -1111,8 +1113,10 @@ fn Renderer(comptime WriterType: type) type {
                 \\    var self: Self = undefined;
                 \\    inline for (std.meta.fields(Dispatch)) |field| {{
                 \\        const name = @ptrCast([*:0]const u8, field.name ++ "\x00");
-                \\        const cmd_ptr = loader({[first_arg]s}, name) orelse undefined;
-                \\        @field(self.dispatch, field.name) = @ptrCast(field.type, cmd_ptr);
+                \\        var cmd_ptr: PfnVoidFunction = undefined;
+                \\        if (loader({[first_arg]s}, name, &cmd_ptr)) {{
+                \\          @field(self.dispatch, field.name) = @ptrCast(field.type, cmd_ptr);
+                \\        }}
                 \\    }}
                 \\    return self;
                 \\}}
