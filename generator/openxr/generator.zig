@@ -9,41 +9,30 @@ const Allocator = mem.Allocator;
 const FeatureLevel = reg.FeatureLevel;
 
 const EnumFieldMerger = struct {
-    const EnumExtensionMap = std.StringArrayHashMap(std.ArrayListUnmanaged(reg.Enum.Field));
-    const FieldSet = std.StringArrayHashMap(void);
+    const EnumExtensionMap = std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(reg.Enum.Field));
+    const FieldSet = std.StringArrayHashMapUnmanaged(void);
 
-    gpa: *Allocator,
-    reg_arena: *Allocator,
+    arena: Allocator,
     registry: *reg.Registry,
     enum_extensions: EnumExtensionMap,
     field_set: FieldSet,
 
-    fn init(gpa: *Allocator, reg_arena: *Allocator, registry: *reg.Registry) EnumFieldMerger {
+    fn init(arena: Allocator, registry: *reg.Registry) EnumFieldMerger {
         return .{
-            .gpa = gpa,
-            .reg_arena = reg_arena,
+            .arena = arena,
             .registry = registry,
-            .enum_extensions = EnumExtensionMap.init(gpa),
-            .field_set = FieldSet.init(gpa),
+            .enum_extensions = .{},
+            .field_set = .{},
         };
     }
 
-    fn deinit(self: *EnumFieldMerger) void {
-        for (self.enum_extensions.items()) |*entry| {
-            entry.value.deinit(self.gpa);
-        }
-
-        self.field_set.deinit();
-        self.enum_extensions.deinit();
-    }
-
     fn putEnumExtension(self: *EnumFieldMerger, enum_name: []const u8, field: reg.Enum.Field) !void {
-        const res = try self.enum_extensions.getOrPut(enum_name);
+        const res = try self.enum_extensions.getOrPut(self.arena, enum_name);
         if (!res.found_existing) {
-            res.entry.value = std.ArrayListUnmanaged(reg.Enum.Field){};
+            res.value_ptr.* = std.ArrayListUnmanaged(reg.Enum.Field){};
         }
 
-        try res.entry.value.append(self.gpa, field);
+        try res.value_ptr.append(self.arena, field);
     }
 
     fn addRequires(self: *EnumFieldMerger, reqs: []const reg.Require) !void {
@@ -61,11 +50,11 @@ const EnumFieldMerger = struct {
         self.field_set.clearRetainingCapacity();
 
         const n_fields_upper_bound = base_enum.fields.len + extensions.items.len;
-        const new_fields = try self.reg_arena.alloc(reg.Enum.Field, n_fields_upper_bound);
+        const new_fields = try self.arena.alloc(reg.Enum.Field, n_fields_upper_bound);
         var i: usize = 0;
 
         for (base_enum.fields) |field| {
-            const res = try self.field_set.getOrPut(field.name);
+            const res = try self.field_set.getOrPut(self.arena, field.name);
             if (!res.found_existing) {
                 new_fields[i] = field;
                 i += 1;
@@ -74,16 +63,16 @@ const EnumFieldMerger = struct {
 
         // Assume that if a field name clobbers, the value is the same
         for (extensions.items) |field| {
-            const res = try self.field_set.getOrPut(field.name);
+            const res = try self.field_set.getOrPut(self.arena, field.name);
             if (!res.found_existing) {
                 new_fields[i] = field;
                 i += 1;
             }
         }
 
-        // Existing base_enum.fields was allocatued by `self.reg_arena`, so
+        // Existing base_enum.fields was allocated by `self.arena`, so
         // it gets cleaned up whenever that is deinited.
-        base_enum.fields = self.reg_arena.shrink(new_fields, i);
+        base_enum.fields = new_fields[0..i];
     }
 
     fn merge(self: *EnumFieldMerger) !void {
@@ -105,151 +94,26 @@ const EnumFieldMerger = struct {
     }
 };
 
-const TagFixerUpper = struct {
-    allocator: *Allocator,
-    registry: *reg.Registry,
-    names: std.StringHashMap(void),
-    id_renderer: *const IdRenderer,
-
-    fn init(allocator: *Allocator, registry: *reg.Registry, id_renderer: *const IdRenderer) TagFixerUpper {
-        return .{
-            .allocator = allocator,
-            .registry = registry,
-            .names = std.StringHashMap(void).init(allocator),
-            .id_renderer = id_renderer,
-        };
-    }
-
-    fn deinit(self: *TagFixerUpper) void {
-        self.names.deinit();
-    }
-
-    fn insertName(self: *TagFixerUpper, name: []const u8) !void {
-        const tagless = self.id_renderer.stripAuthorTag(name);
-        const result = try self.names.getOrPut(name);
-
-        if (result.found_existing) {
-            return error.DuplicateDefinition;
-        }
-    }
-
-    fn extractNames(self: *TagFixerUpper) !void {
-        for (self.registry.decls) |decl| {
-            try self.insertName(decl.name);
-
-            switch (decl.decl_type) {
-                .enumeration => |enumeration| {
-                    for (enumeration.fields) |field| {
-                        try self.insertName(field.name);
-                    }
-                },
-                else => {},
-            }
-        }
-    }
-
-    fn fixAlias(self: *TagFixerUpper, name: *[]const u8) !void {
-        if (self.names.contains(name.*)) {
-            // The alias exists, everything is fine
-            return;
-        }
-
-        // The alias does not exist, check if the tagless version exists
-        const tagless = self.id_renderer.stripAuthorTag(name.*);
-        if (self.names.contains(tagless)) {
-            // Fix up the name to the tagless version
-            name.* = tagless;
-            return;
-        }
-
-        // Neither original nor tagless version exists
-        return error.InvalidRegistry;
-    }
-
-    fn fixCommand(self: *TagFixerUpper, command: *reg.Command) !void {
-        for (command.params) |*param| {
-            try self.fixTypeInfo(&param.param_type);
-        }
-
-        try self.fixTypeInfo(command.return_type);
-        for (command.success_codes) |*code| {
-            try self.fixAlias(code);
-        }
-
-        for (command.error_codes) |*code| {
-            try self.fixAlias(code);
-        }
-    }
-
-    fn fixTypeInfo(self: *TagFixerUpper, type_info: *reg.TypeInfo) error{InvalidRegistry}!void {
-        switch (type_info.*) {
-            .name => |*name| try self.fixAlias(name),
-            .command_ptr => |*command| try self.fixCommand(command),
-            .pointer => |ptr| try self.fixTypeInfo(ptr.child),
-            .array => |arr| try self.fixTypeInfo(arr.child),
-        }
-    }
-
-    fn fixNames(self: *TagFixerUpper) !void {
-        for (self.registry.decls) |*decl| {
-            switch (decl.decl_type) {
-                .container => |*container| {
-                    for (container.fields) |*field| {
-                        try self.fixTypeInfo(&field.field_type);
-                    }
-                },
-                .enumeration => |*enumeration| {
-                    for (enumeration.fields) |*field| {
-                        if (field.value == .alias) {
-                            try self.fixAlias(&field.value.alias.name);
-                        }
-                    }
-                },
-                .bitmask => |*bitmask| {
-                    if (bitmask.bits_enum) |*bits| {
-                        try self.fixAlias(bits);
-                    }
-                },
-                .command => |*command| try self.fixCommand(command),
-                .alias => |*alias| try self.fixAlias(&alias.name),
-                .typedef => |*type_info| try self.fixTypeInfo(type_info),
-                else => {},
-            }
-        }
-    }
-
-    fn fixup(self: *TagFixerUpper) !void {
-        // Extract all non-aliases
-        try self.extractNames();
-
-        // Fix aliases
-        try self.fixNames();
-    }
-};
-
 pub const Generator = struct {
-    gpa: *Allocator,
-    reg_arena: std.heap.ArenaAllocator,
+    arena: std.heap.ArenaAllocator,
     registry: reg.Registry,
     id_renderer: IdRenderer,
 
-    fn init(allocator: *Allocator, spec: *xml.Element) !Generator {
+    fn init(allocator: Allocator, spec: *xml.Element) !Generator {
         const result = try parseXml(allocator, spec);
 
         const tags = try allocator.alloc([]const u8, result.registry.tags.len);
-        for (tags) |*tag, i| tag.* = result.registry.tags[i].name;
+        for (tags, result.registry.tags) |*tag, registry_tag| tag.* = registry_tag.name;
 
         return Generator{
-            .gpa = allocator,
-            .reg_arena = result.arena,
+            .arena = result.arena,
             .registry = result.registry,
             .id_renderer = IdRenderer.init(allocator, tags),
         };
     }
 
     fn deinit(self: Generator) void {
-        self.gpa.free(self.id_renderer.tags);
-        self.reg_arena.deinit();
+        self.arena.deinit();
     }
 
     fn removePromotedExtensions(self: *Generator) void {
@@ -273,49 +137,14 @@ pub const Generator = struct {
         return tagless[0 .. tagless.len - "Flags64".len];
     }
 
-    fn fixupBitmasks(self: *Generator) !void {
-        var bits = std.StringHashMap([]const u8).init(self.gpa);
-        defer bits.deinit();
-
-        for (self.registry.decls) |decl| {
-            if (decl.decl_type == .enumeration and decl.decl_type.enumeration.is_bitmask) {
-                try bits.put(self.stripFlagBits(decl.name), decl.name);
-            }
-        }
-
-        for (self.registry.decls) |*decl| {
-            switch (decl.decl_type) {
-                .bitmask => |*bitmask| {
-                    const base_name = self.stripFlags(decl.name);
-
-                    if (bitmask.bits_enum) |bits_enum| {
-                        if (bits.get(base_name) == null) {
-                            bitmask.bits_enum = null;
-                        }
-                    } else if (bits.get(base_name)) |bits_enum| {
-                        bitmask.bits_enum = bits_enum;
-                    }
-                },
-                else => {},
-            }
-        }
-    }
-
     // Solve `registry.declarations` according to `registry.extensions` and `registry.features`.
     fn mergeEnumFields(self: *Generator) !void {
-        var merger = EnumFieldMerger.init(self.gpa, &self.reg_arena.allocator, &self.registry);
-        defer merger.deinit();
+        var merger = EnumFieldMerger.init(self.arena.allocator(), &self.registry);
         try merger.merge();
     }
 
-    fn fixupTags(self: *Generator) !void {
-        var fixer_upper = TagFixerUpper.init(self.gpa, &self.registry, &self.id_renderer);
-        defer fixer_upper.deinit();
-        try fixer_upper.fixup();
-    }
-
     fn render(self: *Generator, writer: anytype) !void {
-        try renderRegistry(writer, &self.reg_arena.allocator, &self.registry, &self.id_renderer);
+        try renderRegistry(writer, self.arena.allocator(), &self.registry, &self.id_renderer);
     }
 };
 
@@ -323,16 +152,48 @@ pub const Generator = struct {
 /// and the resulting binding is written to `writer`. `allocator` will be used to allocate temporary
 /// internal datastructures - mostly via an ArenaAllocator, but sometimes a hashmap uses this allocator
 /// directly.
-pub fn generate(allocator: *Allocator, spec_xml: []const u8, writer: anytype) !void {
-    const spec = try xml.parse(allocator, spec_xml);
+pub fn generate(allocator: Allocator, spec_xml: []const u8, writer: anytype) !void {
+    const spec = xml.parse(allocator, spec_xml) catch |err| switch (err) {
+        error.InvalidDocument,
+        error.UnexpectedEof,
+        error.UnexpectedCharacter,
+        error.IllegalCharacter,
+        error.InvalidEntity,
+        error.InvalidName,
+        error.InvalidStandaloneValue,
+        error.NonMatchingClosingTag,
+        error.UnclosedComment,
+        error.UnclosedValue,
+        => return error.InvalidXml,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
     defer spec.deinit();
 
-    var gen = try Generator.init(allocator, spec.root);
+    var gen = Generator.init(allocator, spec.root) catch |err| switch (err) {
+        error.InvalidXml,
+        error.InvalidCharacter,
+        error.Overflow,
+        error.InvalidFeatureLevel,
+        error.InvalidSyntax,
+        error.InvalidTag,
+        error.MissingTypeIdentifier,
+        error.UnexpectedCharacter,
+        error.UnexpectedEof,
+        error.UnexpectedToken,
+        error.InvalidRegistry,
+        => return error.InvalidRegistry,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
     defer gen.deinit();
 
     gen.removePromotedExtensions();
     try gen.mergeEnumFields();
-    try gen.fixupBitmasks();
-    try gen.fixupTags();
-    try gen.render(writer);
+    gen.render(writer) catch |err| switch (err) {
+        error.InvalidApiConstant,
+        error.InvalidConstantExpr,
+        error.InvalidRegistry,
+        error.UnexpectedCharacter,
+        => return error.InvalidRegistry,
+        else => |others| return others,
+    };
 }
