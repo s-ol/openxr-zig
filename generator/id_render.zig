@@ -226,6 +226,11 @@ pub const IdRenderer = struct {
             }
         }
 
+        // HACK for EXTX?
+        if (mem.endsWith(u8, id, "EXTX")) {
+            return "EXTX";
+        }
+
         return null;
     }
 
