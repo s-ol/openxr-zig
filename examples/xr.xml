@@ -1432,7 +1432,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <member values="XR_TYPE_SPATIAL_GRAPH_NODE_SPACE_CREATE_INFO_MSFT"><type>XrStructureType</type> <name>type</name></member>
             <member>const <type>void</type>*                            <name>next</name></member>
             <member><type>XrSpatialGraphNodeTypeMSFT</type>             <name>nodeType</name></member>
-            <member><type>uint8_t</type>                                <name>nodeId</name>[<enum>XR_GUID_SIZE_MSFT</enum>]</member>
+            <member><type>uint8_t</type>                                <name>nodeId</name>[XR_GUID_SIZE_MSFT]</member>
             <member><type>XrPosef</type>                                <name>pose</name></member>
         </type>
         <type category="struct" name="XrSpatialGraphStaticNodeBindingCreateInfoMSFT">
@@ -1449,7 +1449,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <type category="struct" name="XrSpatialGraphNodeBindingPropertiesMSFT">
             <member values="XR_TYPE_SPATIAL_GRAPH_NODE_BINDING_PROPERTIES_MSFT"><type>XrStructureType</type> <name>type</name></member>
             <member><type>void</type>*   <name>next</name></member>
-            <member><type>uint8_t</type> <name>nodeId</name>[<enum>XR_GUID_SIZE_MSFT</enum>]</member>
+            <member><type>uint8_t</type> <name>nodeId</name>[XR_GUID_SIZE_MSFT]</member>
             <member><type>XrPosef</type> <name>poseInNodeSpace</name></member>
         </type>
 
@@ -1597,7 +1597,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <type category="struct" name="XrEyeGazesFB">
             <member values="XR_TYPE_EYE_GAZES_FB"><type>XrStructureType</type> <name>type</name></member>
             <member><type>void</type>*       <name>next</name></member>
-            <member><type>XrEyeGazeFB</type> <name>gaze</name>[<enum>XR_EYE_POSITION_COUNT_FB</enum>]</member>
+            <member><type>XrEyeGazeFB</type> <name>gaze</name>[XR_EYE_POSITION_COUNT_FB]</member>
             <member><type>XrTime</type>      <name>time</name></member>
         </type>
 
@@ -1815,8 +1815,8 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <type category="struct" name="XrControllerModelNodePropertiesMSFT">
             <member values="XR_TYPE_CONTROLLER_MODEL_NODE_PROPERTIES_MSFT"><type>XrStructureType</type> <name>type</name></member>
             <member><type>void</type>* <name>next</name></member>
-            <member><type>char</type> <name>parentNodeName</name>[<enum>XR_MAX_CONTROLLER_MODEL_NODE_NAME_SIZE_MSFT</enum>]</member>
-            <member><type>char</type> <name>nodeName</name>[<enum>XR_MAX_CONTROLLER_MODEL_NODE_NAME_SIZE_MSFT</enum>]</member>
+            <member><type>char</type> <name>parentNodeName</name>[XR_MAX_CONTROLLER_MODEL_NODE_NAME_SIZE_MSFT]</member>
+            <member><type>char</type> <name>nodeName</name>[XR_MAX_CONTROLLER_MODEL_NODE_NAME_SIZE_MSFT]</member>
         </type>
         <type category="struct" name="XrControllerModelPropertiesMSFT">
             <member values="XR_TYPE_CONTROLLER_MODEL_PROPERTIES_MSFT"><type>XrStructureType</type> <name>type</name></member>
@@ -2206,7 +2206,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <member values="XR_TYPE_RENDER_MODEL_PROPERTIES_FB"><type>XrStructureType</type> <name>type</name></member>
             <member><type>void</type>*                                                       <name>next</name></member>
             <member><type>uint32_t</type>                                                    <name>vendorId</name></member>
-            <member><type>char</type>                                                        <name>modelName</name>[<enum>XR_MAX_RENDER_MODEL_NAME_SIZE_FB</enum>]</member>
+            <member><type>char</type>                                                        <name>modelName</name>[XR_MAX_RENDER_MODEL_NAME_SIZE_FB]</member>
             <member><type>XrRenderModelKeyFB</type>                                          <name>modelKey</name></member>
             <member><type>uint32_t</type>                                                    <name>modelVersion</name></member>
             <member><type>XrRenderModelFlagsFB</type>                                        <name>flags</name></member>
@@ -2427,7 +2427,7 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
             <member><type>uint64_t</type> <name>trackedKeyboardId</name></member>
             <member><type>XrVector3f</type> <name>size</name></member>
             <member><type>XrKeyboardTrackingFlagsFB</type> <name>flags</name></member>
-            <member><type>char</type> <name>name</name>[<enum>XR_MAX_KEYBOARD_TRACKING_NAME_SIZE_FB</enum>]</member>
+            <member><type>char</type> <name>name</name>[XR_MAX_KEYBOARD_TRACKING_NAME_SIZE_FB]</member>
         </type>
         <type category="struct" name="XrKeyboardSpaceCreateInfoFB">
             <member values="XR_TYPE_KEYBOARD_SPACE_CREATE_INFO_FB"><type>XrStructureType</type> <name>type</name></member>
@@ -2550,12 +2550,12 @@ maintained in the default branch of the Khronos OpenXR GitHub project.
         <type category="struct" name="XrPassthroughColorMapMonoToRgbaFB" structextends="XrPassthroughStyleFB">
             <member values="XR_TYPE_PASSTHROUGH_COLOR_MAP_MONO_TO_RGBA_FB"><type>XrStructureType</type> <name>type</name></member>
             <member>const <type>void</type>* <name>next</name></member>
-            <member><type>XrColor4f</type>   <name>textureColorMap</name>[<enum>XR_PASSTHROUGH_COLOR_MAP_MONO_SIZE_FB</enum>]</member>
+            <member><type>XrColor4f</type>   <name>textureColorMap</name>[XR_PASSTHROUGH_COLOR_MAP_MONO_SIZE_FB]</member>
         </type>
         <type category="struct" name="XrPassthroughColorMapMonoToMonoFB" structextends="XrPassthroughStyleFB">
             <member values="XR_TYPE_PASSTHROUGH_COLOR_MAP_MONO_TO_MONO_FB"><type>XrStructureType</type> <name>type</name></member>
             <member>const <type>void</type>* <name>next</name></member>
-            <member><type>uint8_t</type>     <name>textureColorMap</name>[<enum>XR_PASSTHROUGH_COLOR_MAP_MONO_SIZE_FB</enum>]</member>
+            <member><type>uint8_t</type>     <name>textureColorMap</name>[XR_PASSTHROUGH_COLOR_MAP_MONO_SIZE_FB]</member>
         </type>
         <type category="struct" name="XrPassthroughBrightnessContrastSaturationFB" structextends="XrPassthroughStyleFB">
             <member values="XR_TYPE_PASSTHROUGH_BRIGHTNESS_CONTRAST_SATURATION_FB"><type>XrStructureType</type> <name>type</name></member>
