@@ -3,8 +3,6 @@
 A OpenXR binding generator for Zig.
 The generator is almost a verbatim copy of Snektron's [vulkan-zig][vulkan-zig], and all the hard work was done there.
 
-[![Actions Status](https://github.com/Snektron/openxr-zig/workflows/Build/badge.svg)](https://github.com/s-ol/openxr-zig/actions)
-
 ## Overview
 
 openxr-zig attempts to provide a better experience to programming OpenXR applications in Zig, by providing features such as integration of openxr errors with Zig's error system, function pointer loading, renaming fields to standard Zig style, better bitfield handling, turning out parameters into return values and more.
