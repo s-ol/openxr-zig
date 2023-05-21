@@ -78,6 +78,7 @@ const builtin_types = std.ComptimeStringMap([]const u8, .{
     .{ "int32_t", @typeName(i32) },
     .{ "int64_t", @typeName(i64) },
     .{ "size_t", @typeName(usize) },
+    .{ "wchar_t", @typeName(u16) },
     .{ "int", @typeName(c_int) },
 });
 
