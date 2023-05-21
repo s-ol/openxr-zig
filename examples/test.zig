@@ -3,25 +3,17 @@ const xr = @import("openxr");
 const c = @import("c.zig");
 const Allocator = std.mem.Allocator;
 
-const BaseDispatch = struct {
-    xrCreateInstance: xr.PfnCreateInstance,
-    usingnamespace xr.BaseWrapper(@This());
-};
+const BaseDispatch = xr.BaseWrapper(.{
+    .createInstance = true,
+});
 
-const InstanceDispatch = struct {
-    xrDestroyInstance: xr.PfnDestroyInstance,
-    xrGetSystem: xr.PfnGetSystem,
-    xrGetSystemProperties: xr.PfnGetSystemProperties,
-    xrCreateSession: xr.PfnCreateSession,
-    xrPollEvent: xr.PfnPollEvent,
-    usingnamespace xr.InstanceWrapper(@This());
-};
-
-const SessionDispatch = struct {
-    xrBeginSession: xr.PfnBeginSession,
-    xrEndSession: xr.PfnEndSession,
-    usingnamespace xr.SessionWrapper(@This());
-};
+const InstanceDispatch = xr.InstanceWrapper(.{
+    .destroyInstance = true,
+    .getSystem = true,
+    .getSystemProperties = true,
+    .createSession = true,
+    .pollEvent = true,
+});
 
 fn getProcAddr(instance: xr.Instance, name: [*:0]const u8) !xr.PfnVoidFunction {
     var out: xr.PfnVoidFunction = undefined;
@@ -41,11 +33,10 @@ fn getProcAddr(instance: xr.Instance, name: [*:0]const u8) !xr.PfnVoidFunction {
 pub fn main() !void {
     var name: [128]u8 = undefined;
     std.mem.copy(u8, name[0..], "openxr-zig-test" ++ [_]u8{0});
-    const zero = [_:0]u8{0};
 
-    const xrb = try BaseDispatch.load(getProcAddr);
-    const inst = try xrb.createInstance(.{
-        .create_flags = .{},
+    const xrb = try BaseDispatch.load(c.xrGetInstanceProcAddr);
+
+    const inst = try xrb.createInstance(&.{
         .application_info = .{
             .application_name = name,
             .application_version = 0,
@@ -53,16 +44,12 @@ pub fn main() !void {
             .engine_version = 0,
             .api_version = xr.makeVersion(1, 0, 0),
         },
-        .enabled_api_layer_count = 0,
-        .enabled_api_layer_names = @ptrCast([*]const [*:0]const u8, &zero),
-        .enabled_extension_count = 0,
-        .enabled_extension_names = @ptrCast([*]const [*:0]const u8, &zero),
     });
 
-    const xri = try InstanceDispatch.load(inst, getProcAddr);
+    const xri = try InstanceDispatch.load(inst, c.xrGetInstanceProcAddr);
     defer xri.destroyInstance(inst) catch unreachable;
 
-    const system = try xri.getSystem(inst, .{ .form_factor = .head_mounted_display });
+    const system = try xri.getSystem(inst, &.{ .form_factor = .head_mounted_display });
 
     var system_properties = xr.SystemProperties.empty();
     try xri.getSystemProperties(inst, system, &system_properties);
@@ -70,7 +57,7 @@ pub fn main() !void {
     std.debug.print(
         \\system {}:
         \\  vendor Id: {}
-        \\  systemName: {}
+        \\  systemName: {s}
         \\  gfx
         \\    max swapchain image resolution: {}x{}
         \\    max layer count: {}
@@ -88,8 +75,7 @@ pub fn main() !void {
         system_properties.tracking_properties.position_tracking,
     });
 
-    _ = try xri.createSession(inst, .{
-        .create_flags = .{},
+    _ = try xri.createSession(inst, &.{
         .system_id = system,
     });
 }
