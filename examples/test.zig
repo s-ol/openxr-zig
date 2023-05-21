@@ -88,7 +88,7 @@ pub fn main() !void {
         system_properties.tracking_properties.position_tracking,
     });
 
-    const session = try xri.createSession(inst, .{
+    _ = try xri.createSession(inst, .{
         .create_flags = .{},
         .system_id = system,
     });
