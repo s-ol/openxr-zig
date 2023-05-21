@@ -317,6 +317,14 @@ fn parseDocument(parser: *Parser, backing_allocator: Allocator) !Document {
 
     doc.xml_decl = try parseElement(parser, allocator, .xml_decl);
     _ = parser.eatWs();
+    _ = parser.eatStr("<!DOCTYPE xml>");
+    _ = parser.eatWs();
+
+    // xr.xml currently has 2 processing instruction tags, they're handled manually for now
+    _ = try parseElement(parser, allocator, .xml_decl);
+    _ = parser.eatWs();
+    _ = try parseElement(parser, allocator, .xml_decl);
+    _ = parser.eatWs();
 
     try skipComments(parser, allocator);
 
@@ -422,22 +430,18 @@ const ElementKind = enum {
 fn parseElement(parser: *Parser, alloc: Allocator, comptime kind: ElementKind) !?*Element {
     const start = parser.offset;
 
-    const tag = switch (kind) {
-        .xml_decl => blk: {
-            if (!parser.eatStr("<?") or !mem.eql(u8, try parseNameNoDupe(parser), "xml")) {
-                parser.offset = start;
-                return null;
-            }
-            break :blk "xml";
+    switch (kind) {
+        .xml_decl => {
+            if (!parser.eatStr("<?")) return null;
         },
-        .element => blk: {
+        .element => {
             if (!parser.eat('<')) return null;
-            const tag = parseNameNoDupe(parser) catch {
-                parser.offset = start;
-                return null;
-            };
-            break :blk tag;
         },
+    }
+
+    const tag = parseNameNoDupe(parser) catch {
+        parser.offset = start;
+        return null;
     };
 
     var attributes = std.ArrayList(Attribute).init(alloc);
