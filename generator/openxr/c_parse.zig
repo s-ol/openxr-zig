@@ -550,6 +550,7 @@ fn parseArrayDeclarator(xctok: *XmlCTokenizer) !?ArraySize {
             },
         },
         .enum_name => .{ .alias = size_tok.text },
+        .id => .{ .alias = size_tok.text },
         else => return error.InvalidSyntax,
     };
 
