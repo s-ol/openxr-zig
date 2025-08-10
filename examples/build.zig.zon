@@ -1,0 +1,11 @@
+.{
+    .name = .openxr_zig_examples,
+    .version = "0.1.0",
+    .fingerprint = 0x2c133056e63a1413,
+    .dependencies = .{
+        .openxr_zig = .{
+            .path = "..",
+        },
+    },
+    .paths = .{""},
+}
